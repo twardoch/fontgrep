@@ -10,7 +10,7 @@ struct Args {
 
     /// Codepoints to find (comma-separated list of hyphen-delimited ranges)
     #[arg(short, long, value_parser = parse_unicode_ranges)]
-    codepoint: Vec<Vec<u32>>,
+    unicode: Vec<Vec<u32>>,
 
     /// OpenType features to find
     #[arg(short, long)]
@@ -139,7 +139,7 @@ fn filter_font(entry: &DirEntry<((), ())>, args: &Args) -> Result<bool, ()> {
         }
     }
 
-    for codepoint in args.codepoint.iter().flatten() {
+    for codepoint in args.unicode.iter().flatten() {
         if !codepoint_filter(&font, *codepoint) {
             return Ok(false);
         }
