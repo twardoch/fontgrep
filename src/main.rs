@@ -1,7 +1,9 @@
 use clap::Parser;
 use jwalk::{DirEntry, WalkDir};
 use read_fonts::TableProvider;
+use regex::Regex;
 use skrifa::{FontRef, MetadataProvider};
+
 #[derive(Parser, Debug)]
 struct Args {
     /// Variation axes to find
@@ -20,9 +22,9 @@ struct Args {
     #[arg(short, long)]
     script: Vec<String>,
 
-    /// Name table entries to find
+    /// Name table entries to find (as regular expressions)
     #[arg(short, long)]
-    name: Vec<String>,
+    name: Vec<Regex>,
 
     /// Directory to search for fonts
     #[arg(default_value = ".")]
@@ -105,14 +107,14 @@ fn codepoint_filter(font: &FontRef, codepoint: u32) -> bool {
     font.charmap().map(codepoint).is_some()
 }
 
-fn name_filter(font: &FontRef, needle: &str) -> bool {
+fn name_filter(font: &FontRef, needle: &Regex) -> bool {
     let Ok(name) = font.name() else {
         return false;
     };
     let records = name.name_record().iter();
     records
         .flat_map(|record| record.string(name.string_data()))
-        .any(|s| s.chars().collect::<String>().contains(needle))
+        .any(|s| needle.is_match(&s.chars().collect::<String>()))
 }
 
 type StringFilter = dyn Fn(&FontRef, &str) -> bool;
@@ -128,7 +130,6 @@ fn filter_font(entry: &DirEntry<((), ())>, args: &Args) -> Result<bool, ()> {
         (&feature_filter, &args.feature),
         (&axis_filter, &args.axis),
         (&script_filter, &args.script),
-        (&name_filter, &args.name),
     ];
 
     for (filter, values) in filters {
@@ -136,6 +137,11 @@ fn filter_font(entry: &DirEntry<((), ())>, args: &Args) -> Result<bool, ()> {
             if !filter(&font, value) {
                 return Ok(false);
             }
+        }
+    }
+    for regex in args.name.iter() {
+        if !name_filter(&font, regex) {
+            return Ok(false);
         }
     }
 
