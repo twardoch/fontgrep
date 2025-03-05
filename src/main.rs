@@ -1,8 +1,10 @@
 use clap::Parser;
+use std::fs::File;
 use jwalk::{DirEntry, WalkDir};
 use read_fonts::TableProvider;
 use regex::Regex;
 use skrifa::{FontRef, MetadataProvider};
+use memmap2::Mmap;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -124,7 +126,8 @@ fn filter_font(entry: &DirEntry<((), ())>, args: &Args) -> Result<bool, ()> {
     if !name.ends_with(".otf") && !name.ends_with(".ttf") {
         return Ok(false);
     }
-    let data = std::fs::read(entry.path()).map_err(|_| ())?;
+    let file = File::open(entry.path()).map_err(|_| ())?;
+    let data = unsafe { Mmap::map(&file).map_err(|_| ())? };
     let font = FontRef::new(&data).map_err(|_| ())?;
     let filters: Vec<(&StringFilter, &Vec<String>)> = vec![
         (&feature_filter, &args.feature),

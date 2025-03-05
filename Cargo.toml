@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 clap = { version = "4.5.31", features = ["derive"] }
 jwalk = "0.8.1"
+memmap2 = "0.9.5"
 rayon = "1.10.0"
 read-fonts = "0.27.2"
 regex = "1.11.1"
