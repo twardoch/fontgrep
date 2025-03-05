@@ -20,6 +20,10 @@ struct Args {
     #[arg(short, long)]
     feature: Vec<String>,
 
+    /// Find variable fonts
+    #[arg(short, long)]
+    variable: bool,
+
     /// Scripts to find
     #[arg(short, long)]
     script: Vec<String>,
@@ -134,6 +138,10 @@ fn filter_font(entry: &DirEntry<((), ())>, args: &Args) -> Result<bool, ()> {
         (&axis_filter, &args.axis),
         (&script_filter, &args.script),
     ];
+
+    if args.variable && font.axes().len() == 0 {
+        return Ok(false);
+    }
 
     for (filter, values) in filters {
         for value in values.iter() {
