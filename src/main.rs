@@ -16,6 +16,10 @@ struct Args {
     #[arg(short, long, value_parser = parse_unicode_ranges)]
     unicode: Vec<Vec<u32>>,
 
+    // Text support to find (added to --unicode)
+    #[arg(short, long)]
+    text: Option<String>,
+
     /// OpenType features to find
     #[arg(short, long)]
     feature: Vec<String>,
@@ -183,7 +187,12 @@ fn filter_font(entry: &DirEntry<((), ())>, args: &Args) -> Result<bool, ()> {
 }
 
 fn main() {
-    let args = Args::parse();
+    let mut args = Args::parse();
+    if let Some(text) = args.text.take() {
+        // Split into codepoints and add to args.unicode
+        let codepoints = text.chars().map(|c| c as u32).collect();
+        args.unicode.push(codepoints);
+    }
     let directory = args.directory.clone();
     let walker = WalkDir::new(directory)
         .process_read_dir(move |_depth, _path, _read_dir_state, children| {
