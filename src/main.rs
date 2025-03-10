@@ -1,10 +1,10 @@
 use clap::Parser;
-use std::fs::File;
 use jwalk::{DirEntry, WalkDir};
+use memmap2::Mmap;
 use read_fonts::TableProvider;
 use regex::Regex;
-use skrifa::{FontRef, MetadataProvider};
-use memmap2::Mmap;
+use skrifa::{FontRef, MetadataProvider, Tag};
+use std::{fs::File, str::FromStr};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -23,6 +23,10 @@ struct Args {
     /// Find variable fonts
     #[arg(short, long)]
     variable: bool,
+
+    /// Find fonts with particular tables
+    #[arg(short = 'T', long, value_parser = parse_font_tags)]
+    table: Vec<Tag>,
 
     /// Scripts to find
     #[arg(short, long)]
@@ -65,6 +69,10 @@ fn parse_unicode_ranges(arg: &str) -> Result<Vec<u32>, String> {
     Ok(codepoints)
 }
 
+fn parse_font_tags(arg: &str) -> Result<Tag, String> {
+    Tag::from_str(arg).map_err(|e| e.to_string())
+}
+
 fn feature_filter(font: &FontRef, feature: &str) -> bool {
     let gsub_featurelist = font.gsub().ok().and_then(|gsub| gsub.feature_list().ok());
     let gpos_feature_list = font.gpos().ok().and_then(|gpos| gpos.feature_list().ok());
@@ -87,6 +95,10 @@ fn feature_filter(font: &FontRef, feature: &str) -> bool {
 
 fn axis_filter(font: &FontRef, axis: &str) -> bool {
     font.axes().iter().any(|a| a.tag() == axis)
+}
+
+fn table_filter(font: &FontRef, table: Tag) -> bool {
+    font.table_data(table).is_some()
 }
 
 fn script_filter(font: &FontRef, script: &str) -> bool {
@@ -139,7 +151,7 @@ fn filter_font(entry: &DirEntry<((), ())>, args: &Args) -> Result<bool, ()> {
         (&script_filter, &args.script),
     ];
 
-    if args.variable && font.axes().len() == 0 {
+    if args.variable && font.axes().is_empty() {
         return Ok(false);
     }
 
@@ -152,6 +164,11 @@ fn filter_font(entry: &DirEntry<((), ())>, args: &Args) -> Result<bool, ()> {
     }
     for regex in args.name.iter() {
         if !name_filter(&font, regex) {
+            return Ok(false);
+        }
+    }
+    for tag in args.table.iter() {
+        if !table_filter(&font, *tag) {
             return Ok(false);
         }
     }
