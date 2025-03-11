@@ -2,19 +2,22 @@
 //
 // this_file: fontgrep/src/main.rs
 
+mod cache;
+mod fontinfo;
+mod query;
+
+use cache::FontCache;
 use clap::Parser;
-use jwalk::{DirEntry, WalkDir};
-use memmap2::Mmap;
-use read_fonts::TableProvider;
+use query::FontQuery;
 use regex::Regex;
-use skrifa::{FontRef, MetadataProvider, Tag};
+use skrifa::Tag;
 use std::{
-    fs::File,
-    str::FromStr,
     io::{BufWriter, Write, stdout},
+    time::Instant,
 };
 
 #[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
 struct Args {
     /// Variation axes to find
     #[arg(short, long)]
@@ -48,261 +51,160 @@ struct Args {
     #[arg(short, long)]
     name: Vec<String>,
 
+    /// Query from cache only. Optionally specify path to filter cached results.
+    #[arg(short, long, num_args = 0..=1, default_missing_value = "")]
+    cache: Option<String>,
+
+    /// Update cache with fonts from specified path (or current directory if not specified)
+    #[arg(short = 'C', long, num_args = 0..=1, default_missing_value = ".")]
+    cache_update: Option<String>,
+
     /// Directory to search for fonts
     #[arg(default_value = ".")]
-    directory: String,
+    directory: Vec<String>,
 }
 
+/// Parse a comma-separated list of Unicode ranges
 fn parse_unicode_ranges(arg: &str) -> Result<Vec<u32>, String> {
-    let mut codepoints = Vec::new();
-    for range in arg.to_ascii_uppercase().split(',') {
-        let parts: Vec<&str> = range
-            .split('-')
-            .map(|part| {
-                if part.starts_with("U+") || part.starts_with("0x") {
-                    &part[2..]
-                } else {
-                    part
-                }
-            })
-            .collect();
+    let mut result = Vec::new();
+    
+    for range in arg.split(',') {
+        let parts: Vec<&str> = range.split('-').collect();
+        
         if parts.len() == 1 {
-            codepoints.push(u32::from_str_radix(parts[0], 16).map_err(|e| e.to_string())?);
+            // Single codepoint
+            let codepoint = u32::from_str_radix(parts[0].trim_start_matches("U+"), 16)
+                .map_err(|_| format!("Invalid codepoint: {}", parts[0]))?;
+            result.push(codepoint);
         } else if parts.len() == 2 {
-            let start = u32::from_str_radix(parts[0], 16).map_err(|e| e.to_string())?;
-            let end = u32::from_str_radix(parts[1], 16).map_err(|e| e.to_string())?;
+            // Range of codepoints
+            let start = u32::from_str_radix(parts[0].trim_start_matches("U+"), 16)
+                .map_err(|_| format!("Invalid start codepoint: {}", parts[0]))?;
+            let end = u32::from_str_radix(parts[1].trim_start_matches("U+"), 16)
+                .map_err(|_| format!("Invalid end codepoint: {}", parts[1]))?;
+            
             for codepoint in start..=end {
-                codepoints.push(codepoint);
+                result.push(codepoint);
             }
         } else {
-            return Err(format!("Bad range: {}", range));
+            return Err(format!("Invalid range format: {}", range));
         }
     }
-    Ok(codepoints)
+    
+    Ok(result)
 }
 
+/// Parse a font table tag
 fn parse_font_tags(arg: &str) -> Result<Tag, String> {
-    Tag::from_str(arg).map_err(|e| e.to_string())
-}
-
-fn feature_filter(font: &FontRef, feature: &str) -> bool {
-    let gsub_featurelist = font.gsub().ok().and_then(|gsub| gsub.feature_list().ok());
-    let gpos_feature_list = font.gpos().ok().and_then(|gpos| gpos.feature_list().ok());
-    let gsub_feature_and_data = gsub_featurelist.map(|list| {
-        list.feature_records()
-            .iter()
-            .map(move |feature| (feature, feature.feature(list.offset_data())))
-    });
-    let gpos_feature_and_data = gpos_feature_list.map(|list| {
-        list.feature_records()
-            .iter()
-            .map(move |feature| (feature, feature.feature(list.offset_data())))
-    });
-    gsub_feature_and_data
-        .into_iter()
-        .flatten()
-        .chain(gpos_feature_and_data.into_iter().flatten())
-        .any(|(f, _)| f.feature_tag() == feature)
-}
-
-fn axis_filter(font: &FontRef, axis: &str) -> bool {
-    font.axes().iter().any(|a| a.tag() == axis)
-}
-
-fn table_filter(font: &FontRef, table: Tag) -> bool {
-    font.table_data(table).is_some()
-}
-
-fn script_filter(font: &FontRef, script: &str) -> bool {
-    let gsub_script_list = font.gsub().ok().and_then(|gsub| gsub.script_list().ok());
-    let gpos_script_list = font.gpos().ok().and_then(|gpos| gpos.script_list().ok());
-    let gsub_script_and_data = gsub_script_list.map(|list| {
-        list.script_records()
-            .iter()
-            .map(move |script| (script, script.script(list.offset_data())))
-    });
-    let gpos_script_and_data = gpos_script_list.map(|list| {
-        list.script_records()
-            .iter()
-            .map(move |script| (script, script.script(list.offset_data())))
-    });
-    gsub_script_and_data
-        .into_iter()
-        .flatten()
-        .chain(gpos_script_and_data.into_iter().flatten())
-        .any(|(s, _)| s.script_tag() == script)
-}
-
-fn codepoint_filter(font: &FontRef, codepoint: u32) -> bool {
-    font.charmap().map(codepoint).is_some()
-}
-
-fn name_filter(font: &FontRef, needle: &Regex) -> bool {
-    let Ok(name) = font.name() else {
-        return false;
-    };
-    let records = name.name_record().iter();
-    records
-        .flat_map(|record| record.string(name.string_data()))
-        .any(|s| needle.is_match(&s.chars().collect::<String>()))
-}
-
-// Fast file extension check using byte-level comparison
-#[inline]
-fn is_font_file(name: &str) -> bool {
-    if name.ends_with(".otf") || name.ends_with(".ttf") {
-        return true;
+    if arg.len() != 4 {
+        return Err(format!("Table tag must be exactly 4 characters: {}", arg));
     }
-    false
-}
-
-fn filter_font(entry: &DirEntry<((), ())>, args: &Args, name_regexes: &[Regex]) -> Result<bool, ()> {
-    // Early check if it's a directory
-    if entry.file_type().is_dir() {
-        return Ok(false);
-    }
-
-    // Check file extension
-    let name = entry.file_name().to_str().ok_or(())?;
-    if !is_font_file(name) {
-        return Ok(false);
-    }
-
-    // Open and parse the font
-    let file = File::open(entry.path()).map_err(|_| ())?;
-    let data = unsafe { Mmap::map(&file).map_err(|_| ())? };
-    let font = FontRef::new(&data).map_err(|_| ())?;
-
-    // Variable font check (very cheap)
-    if args.variable && font.axes().is_empty() {
-        return Ok(false);
-    }
-
-    // Axis filters (often fails quickly)
-    if !args.axis.is_empty() {
-        for axis in &args.axis {
-            if !axis_filter(&font, axis) {
-                return Ok(false);
-            }
-        }
-    }
-
-    // Feature filters
-    if !args.feature.is_empty() {
-        for feature in &args.feature {
-            if !feature_filter(&font, feature) {
-                return Ok(false);
-            }
-        }
-    }
-
-    // Script filters
-    if !args.script.is_empty() {
-        for script in &args.script {
-            if !script_filter(&font, script) {
-                return Ok(false);
-            }
-        }
-    }
-
-    // Table filter
-    if !args.table.is_empty() {
-        for tag in &args.table {
-            if !table_filter(&font, *tag) {
-                return Ok(false);
-            }
-        }
-    }
-
-    // Name regex checks
-    if !name_regexes.is_empty() {
-        for regex in name_regexes {
-            if !name_filter(&font, regex) {
-                return Ok(false);
-            }
-        }
-    }
-
-    // Unicode codepoint checks (most expensive)
-    if !args.unicode.is_empty() {
-        for codepoint in args.unicode.iter().flatten() {
-            if !codepoint_filter(&font, *codepoint) {
-                return Ok(false);
-            }
-        }
-    }
-
-    Ok(true)
+    
+    let bytes = arg.as_bytes();
+    Ok(Tag::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse command line arguments
-    let mut args = Args::parse();
+    let args = Args::parse();
     
-    // Process any text option and convert to Unicode codepoints
-    if let Some(text) = args.text.take() {
-        let codepoints = text.chars().map(|c| c as u32).collect();
-        args.unicode.push(codepoints);
+    // Start timing
+    let start_time = Instant::now();
+    
+    // Process text argument if provided
+    let mut unicode_ranges = args.unicode.clone();
+    if let Some(text) = &args.text {
+        let text_codepoints: Vec<u32> = text.chars().map(|c| c as u32).collect();
+        unicode_ranges.push(text_codepoints);
     }
-
-    // Pre-compile regular expressions for name matching
-    let name_regexes: Vec<Regex> = args
-        .name
-        .iter()
-        .map(|pattern| {
-            Regex::new(pattern).unwrap_or_else(|e| {
-                eprintln!("Invalid regex '{}': {}", pattern, e);
-                std::process::exit(1);
-            })
-        })
-        .collect();
-
-    // Setup buffered output with fixed 64KB buffer size
-    const BUFFER_SIZE: usize = 64 * 1024;
-    let mut writer = BufWriter::with_capacity(BUFFER_SIZE, stdout());
     
-    // Set up optimal parallelism - use all available CPU cores
-    let num_threads = num_cpus::get();
+    // Compile name regexes
+    let name_regexes: Vec<Regex> = args.name.iter()
+        .map(|pattern| Regex::new(pattern))
+        .collect::<Result<_, _>>()?;
     
-    // Create walker with original workflow but improved settings
-    let walker = WalkDir::new(args.directory.clone())
-        .skip_hidden(false)
-        .follow_links(false)
-        .sort(true)
-        .parallelism(if num_threads > 1 {
-            jwalk::Parallelism::RayonNewPool(num_threads)
+    // Initialize cache
+    let cache_path = if args.cache.is_some() {
+        // Use the cache path from -c if provided, otherwise use default
+        args.cache.as_deref().filter(|&p| !p.is_empty())
+    } else if args.cache_update.is_some() {
+        // Use the cache path from -C if provided, otherwise use default
+        args.cache_update.as_deref().filter(|&p| !p.is_empty())
+    } else {
+        None
+    };
+    
+    let cache = match FontCache::new(cache_path) {
+        Ok(cache) => Some(cache),
+        Err(e) => {
+            eprintln!("Warning: Failed to initialize cache: {}", e);
+            None
+        }
+    };
+    
+    // Determine directories to search based on command line options
+    let search_directories = if args.cache.is_some() {
+        // If -c is used, we're only querying the cache
+        // If a path is provided with -c, filter cached results by that path
+        if let Some(path) = args.cache.as_deref().filter(|&p| !p.is_empty()) {
+            vec![path.to_string()]
         } else {
-            jwalk::Parallelism::Serial
-        })
-        .process_read_dir(move |_depth, _path, _read_dir_state, children| {
-            children.retain(|dir_entry_result| {
-                dir_entry_result
-                    .as_ref()
-                    .map(|dir_entry| {
-                        dir_entry.file_type().is_dir() 
-                            || filter_font(dir_entry, &args, &name_regexes).unwrap_or(false)
-                    })
-                    .unwrap_or(false)
-            });
-        });
-
-    // Process results, printing incrementally as they're found
-    let mut count = 0;
-    for entry in walker.into_iter().flatten() {
-        if entry.file_type().is_dir() {
-            continue;
+            // Empty vector means query all cached records
+            Vec::new()
         }
-        writeln!(writer, "{}", entry.path().display())?;
-        
-        // Flush the buffer periodically to ensure progressive output
-        count += 1;
-        if count % 10 == 0 {
-            writer.flush()?;
-        }
-    }
+    } else if args.cache_update.is_some() {
+        // If -C is used, we're only updating the cache
+        // Use the provided path or "." if none provided
+        vec![args.cache_update.as_deref().unwrap_or(".").to_string()]
+    } else {
+        // Normal mode: search the directories specified on the command line
+        args.directory.clone()
+    };
     
-    // Final flush
-    writer.flush()?;
-
+    // Create and execute the query
+    let query = FontQuery::new(
+        args.axis,
+        unicode_ranges,
+        args.feature,
+        args.variable,
+        args.table,
+        args.script,
+        name_regexes,
+        cache,
+    );
+    
+    // Execute the query based on the mode
+    let matching_fonts = if args.cache_update.is_some() {
+        // If -C is used, we're only updating the cache, not querying
+        // Just update the cache and return empty results
+        query.update_cache(&search_directories)?;
+        Vec::new()
+    } else {
+        // Normal query mode or cache query mode
+        query.execute(&search_directories)?
+    };
+    
+    // Print results (only if not in cache update mode)
+    if args.cache_update.is_none() {
+        let stdout = stdout();
+        let mut writer = BufWriter::new(stdout.lock());
+        
+        for font in &matching_fonts {
+            writeln!(writer, "{}", font)?;
+        }
+        
+        // Flush the buffer
+        writer.flush()?;
+        
+        // Print summary
+        eprintln!(
+            "Found {} matching fonts in {:.2} seconds",
+            matching_fonts.len(),
+            start_time.elapsed().as_secs_f64()
+        );
+    }
+    // We don't need to print a summary for cache update mode anymore
+    // as the progress bar already shows completion
+    
     Ok(())
 } 
