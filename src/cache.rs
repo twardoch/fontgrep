@@ -5,7 +5,7 @@
 use crate::{
     font::FontInfo,
     query::QueryCriteria,
-    Result, FontgrepError, DEFAULT_BATCH_SIZE,
+    Result, DEFAULT_BATCH_SIZE,
 };
 use rusqlite::{params, Connection, ToSql, OptionalExtension};
 use std::{

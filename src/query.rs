@@ -3,16 +3,15 @@
 // Query execution and font matching
 
 use crate::{
-    Result, FontgrepError, DEFAULT_BATCH_SIZE,
-    font::{FontInfo, FontMatcher, is_font_file},
+    Result, FontgrepError,
+    font::{FontInfo, is_font_file},
     cache::FontCache,
     utils::{get_file_mtime, get_file_size},
 };
 use rayon::prelude::*;
 use regex::Regex;
-use skrifa::Tag;
 use std::{
-    collections::{HashSet, HashMap},
+    collections::HashSet,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -306,7 +305,7 @@ impl FontQuery {
     /// Check if a font matches the criteria
     fn font_matches(&self, font_info: &FontInfo) -> Result<bool> {
         // Create matchers for each criteria
-        let mut matches = true;
+        let matches = true;
         
         // Check variable font
         if self.criteria.variable && !font_info.is_variable {
@@ -381,7 +380,7 @@ impl FontQuery {
         let font_files = self.collect_font_files(paths)?;
         
         // Process font files in batches
-        let mut processed = 0;
+        let processed = 0;
         let total = font_files.len();
         
         // Configure thread pool

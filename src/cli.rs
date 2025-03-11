@@ -4,15 +4,13 @@
 
 use crate::{
     Result, FontgrepError,
-    font::{FontInfo, load_font},
+    font::FontInfo,
     query::{FontQuery, QueryCriteria},
-    utils::determine_cache_path,
 };
 use clap::{Parser, Subcommand, Args as ClapArgs, ValueEnum};
 use skrifa::Tag;
 use std::{
-    collections::HashSet,
-    path::{Path, PathBuf},
+    path::PathBuf,
     str::FromStr,
 };
 
