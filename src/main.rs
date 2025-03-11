@@ -1,10 +1,18 @@
+// fontgrep - A tool for finding fonts with specific features
+//
+// this_file: fontgrep/src/main.rs
+
 use clap::Parser;
 use jwalk::{DirEntry, WalkDir};
 use memmap2::Mmap;
 use read_fonts::TableProvider;
 use regex::Regex;
 use skrifa::{FontRef, MetadataProvider, Tag};
-use std::{fs::File, str::FromStr};
+use std::{
+    fs::File,
+    str::FromStr,
+    io::{BufWriter, Write, stdout},
+};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -38,7 +46,7 @@ struct Args {
 
     /// Name table entries to find (as regular expressions)
     #[arg(short, long)]
-    name: Vec<Regex>,
+    name: Vec<String>,
 
     /// Directory to search for fonts
     #[arg(default_value = ".")]
@@ -139,79 +147,162 @@ fn name_filter(font: &FontRef, needle: &Regex) -> bool {
         .any(|s| needle.is_match(&s.chars().collect::<String>()))
 }
 
-type StringFilter = dyn Fn(&FontRef, &str) -> bool;
+// Fast file extension check using byte-level comparison
+#[inline]
+fn is_font_file(name: &str) -> bool {
+    if name.ends_with(".otf") || name.ends_with(".ttf") {
+        return true;
+    }
+    false
+}
 
-fn filter_font(entry: &DirEntry<((), ())>, args: &Args) -> Result<bool, ()> {
-    let name = entry.file_name().to_str().ok_or(())?;
-    if !name.ends_with(".otf") && !name.ends_with(".ttf") {
+fn filter_font(entry: &DirEntry<((), ())>, args: &Args, name_regexes: &[Regex]) -> Result<bool, ()> {
+    // Early check if it's a directory
+    if entry.file_type().is_dir() {
         return Ok(false);
     }
+
+    // Check file extension
+    let name = entry.file_name().to_str().ok_or(())?;
+    if !is_font_file(name) {
+        return Ok(false);
+    }
+
+    // Open and parse the font
     let file = File::open(entry.path()).map_err(|_| ())?;
     let data = unsafe { Mmap::map(&file).map_err(|_| ())? };
     let font = FontRef::new(&data).map_err(|_| ())?;
-    let filters: Vec<(&StringFilter, &Vec<String>)> = vec![
-        (&feature_filter, &args.feature),
-        (&axis_filter, &args.axis),
-        (&script_filter, &args.script),
-    ];
 
+    // Variable font check (very cheap)
     if args.variable && font.axes().is_empty() {
         return Ok(false);
     }
 
-    for (filter, values) in filters {
-        for value in values.iter() {
-            if !filter(&font, value) {
+    // Axis filters (often fails quickly)
+    if !args.axis.is_empty() {
+        for axis in &args.axis {
+            if !axis_filter(&font, axis) {
                 return Ok(false);
             }
         }
     }
-    for regex in args.name.iter() {
-        if !name_filter(&font, regex) {
-            return Ok(false);
-        }
-    }
-    for tag in args.table.iter() {
-        if !table_filter(&font, *tag) {
-            return Ok(false);
+
+    // Feature filters
+    if !args.feature.is_empty() {
+        for feature in &args.feature {
+            if !feature_filter(&font, feature) {
+                return Ok(false);
+            }
         }
     }
 
-    for codepoint in args.unicode.iter().flatten() {
-        if !codepoint_filter(&font, *codepoint) {
-            return Ok(false);
+    // Script filters
+    if !args.script.is_empty() {
+        for script in &args.script {
+            if !script_filter(&font, script) {
+                return Ok(false);
+            }
+        }
+    }
+
+    // Table filter
+    if !args.table.is_empty() {
+        for tag in &args.table {
+            if !table_filter(&font, *tag) {
+                return Ok(false);
+            }
+        }
+    }
+
+    // Name regex checks
+    if !name_regexes.is_empty() {
+        for regex in name_regexes {
+            if !name_filter(&font, regex) {
+                return Ok(false);
+            }
+        }
+    }
+
+    // Unicode codepoint checks (most expensive)
+    if !args.unicode.is_empty() {
+        for codepoint in args.unicode.iter().flatten() {
+            if !codepoint_filter(&font, *codepoint) {
+                return Ok(false);
+            }
         }
     }
 
     Ok(true)
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Parse command line arguments
     let mut args = Args::parse();
+    
+    // Process any text option and convert to Unicode codepoints
     if let Some(text) = args.text.take() {
-        // Split into codepoints and add to args.unicode
         let codepoints = text.chars().map(|c| c as u32).collect();
         args.unicode.push(codepoints);
     }
-    let directory = args.directory.clone();
-    let walker = WalkDir::new(directory)
+
+    // Pre-compile regular expressions for name matching
+    let name_regexes: Vec<Regex> = args
+        .name
+        .iter()
+        .map(|pattern| {
+            Regex::new(pattern).unwrap_or_else(|e| {
+                eprintln!("Invalid regex '{}': {}", pattern, e);
+                std::process::exit(1);
+            })
+        })
+        .collect();
+
+    // Setup buffered output with fixed 64KB buffer size
+    const BUFFER_SIZE: usize = 64 * 1024;
+    let mut writer = BufWriter::with_capacity(BUFFER_SIZE, stdout());
+    
+    // Set up optimal parallelism - use all available CPU cores
+    let num_threads = num_cpus::get();
+    
+    // Create walker with original workflow but improved settings
+    let walker = WalkDir::new(args.directory.clone())
+        .skip_hidden(false)
+        .follow_links(false)
+        .sort(true)
+        .parallelism(if num_threads > 1 {
+            jwalk::Parallelism::RayonNewPool(num_threads)
+        } else {
+            jwalk::Parallelism::Serial
+        })
         .process_read_dir(move |_depth, _path, _read_dir_state, children| {
             children.retain(|dir_entry_result| {
                 dir_entry_result
                     .as_ref()
                     .map(|dir_entry| {
-                        dir_entry.file_type().is_dir()
-                            || filter_font(dir_entry, &args).unwrap_or(false)
+                        dir_entry.file_type().is_dir() 
+                            || filter_font(dir_entry, &args, &name_regexes).unwrap_or(false)
                     })
                     .unwrap_or(false)
             });
-        })
-        .sort(true);
+        });
 
+    // Process results, printing incrementally as they're found
+    let mut count = 0;
     for entry in walker.into_iter().flatten() {
         if entry.file_type().is_dir() {
             continue;
         }
-        println!("{}", entry.path().display());
+        writeln!(writer, "{}", entry.path().display())?;
+        
+        // Flush the buffer periodically to ensure progressive output
+        count += 1;
+        if count % 10 == 0 {
+            writer.flush()?;
+        }
     }
-}
+    
+    // Final flush
+    writer.flush()?;
+
+    Ok(())
+} 

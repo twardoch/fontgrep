@@ -1,12 +1,22 @@
 [package]
 name = "fontgrep"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2024"
+authors = ["Simon Cozens"]
+description = "Fast CLI tool for searching and filtering font files based on OpenType tables, features, variable font axes and Unicode scripts and characters"
+repository = "https://github.com/simoncozens/fontgrep"
+homepage = "https://github.com/simoncozens/fontgrep"
+documentation = "https://github.com/simoncozens/fontgrep"
+readme = "README.md"
+license = "MIT"
+keywords = ["fonts", "opentype", "typography", "search", "filter"]
+categories = ["command-line-utilities", "text-processing", "graphics"]
 
 [dependencies]
 clap = { version = "4.5.31", features = ["derive"] }
 jwalk = "0.8.1"
 memmap2 = "0.9.5"
+num_cpus = "1.16.0"
 rayon = "1.10.0"
 read-fonts = "0.27.2"
 regex = "1.11.1"
