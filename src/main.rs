@@ -4,7 +4,7 @@
 use clap::Parser;
 use env_logger::{Builder, Env};
 use fontgrep::cli;
-use log::{error, info};
+use log::error;
 use std::process;
 
 /// Main entry point for the fontgrep application
@@ -22,9 +22,6 @@ fn main() {
     if cli.verbose {
         log::set_max_level(log::LevelFilter::Debug);
     }
-
-    // Log startup information
-    info!("fontgrep v{}", env!("CARGO_PKG_VERSION"));
 
     // Run the application and handle errors
     if let Err(e) = cli::execute(cli) {
