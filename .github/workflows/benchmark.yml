@@ -32,7 +32,6 @@ jobs:
           output-file-path: benches/benchmark-output.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: true
-          external-data-json-path: ./cache/benchmark-data.json
           # Show alert with commit comment on detecting possible performance regression
           alert-threshold: "20%"
           comment-on-alert: true
