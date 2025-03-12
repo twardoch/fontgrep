@@ -239,10 +239,10 @@ pub struct InfoArgs {
 /// Execute the command
 pub fn execute(cli: Cli) -> Result<()> {
     // Determine cache path and whether to use cache
-    let use_cache = match &cli.command {
-        Commands::Fast(_) | Commands::Save(_) | Commands::Saved | Commands::Forget => true,
-        _ => false,
-    };
+    let use_cache = matches!(
+        &cli.command,
+        Commands::Fast(_) | Commands::Save(_) | Commands::Saved | Commands::Forget
+    );
 
     let cache_path = if use_cache {
         Some(cli.cache_path.as_deref())
