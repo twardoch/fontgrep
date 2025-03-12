@@ -62,11 +62,6 @@ impl FontCache {
         Ok(Self { conn: None, path })
     }
 
-    /// Get the cache path
-    pub fn get_cache_path(&self) -> &PathBuf {
-        &self.path
-    }
-
     /// Check if a font needs to be updated in the cache
     pub fn needs_update(&self, path: &str, mtime: i64, size: i64) -> Result<bool> {
         let conn = self.get_connection()?;
@@ -79,71 +74,6 @@ impl FontCache {
         )?;
 
         Ok(!exists)
-    }
-
-    /// Update a font in the cache
-    pub fn update_font(&self, path: &str, info: &FontInfo, mtime: i64, size: i64) -> Result<()> {
-        let mut conn = self.get_connection()?;
-        let tx = conn.transaction()?;
-        let guard = TransactionGuard::new(tx);
-
-        // Get or create font_id
-        let font_id = {
-            // First try to get existing font_id
-            let mut stmt = guard
-                .transaction()
-                .prepare("SELECT id FROM fonts WHERE path = ?")?;
-
-            let font_id: Option<i64> =
-                stmt.query_row(params![path], |row| row.get(0)).optional()?;
-
-            if let Some(id) = font_id {
-                // Update existing font
-                guard.transaction().execute(
-                    "UPDATE fonts SET name = ?, is_variable = ?, mtime = ?, size = ?, charset = ? WHERE id = ?",
-                    params![
-                        info.name_string,
-                        info.is_variable,
-                        mtime,
-                        size,
-                        info.charset_string,
-                        id
-                    ],
-                )?;
-
-                // Clear existing properties
-                guard
-                    .transaction()
-                    .execute("DELETE FROM font_properties WHERE font_id = ?", params![id])?;
-
-                id
-            } else {
-                // Insert new font
-                guard.transaction().execute(
-                    "INSERT INTO fonts (path, name, is_variable, mtime, size, charset) VALUES (?, ?, ?, ?, ?, ?)",
-                    params![
-                        path,
-                        info.name_string,
-                        info.is_variable,
-                        mtime,
-                        size,
-                        info.charset_string
-                    ],
-                )?;
-
-                guard.transaction().last_insert_rowid()
-            }
-        };
-
-        // Insert properties
-        self.batch_insert_properties(&guard, font_id, "axis", &info.axes)?;
-        self.batch_insert_properties(&guard, font_id, "feature", &info.features)?;
-        self.batch_insert_properties(&guard, font_id, "script", &info.scripts)?;
-        self.batch_insert_properties(&guard, font_id, "table", &info.tables)?;
-
-        guard.commit()?;
-
-        Ok(())
     }
 
     /// Batch update fonts in the cache
