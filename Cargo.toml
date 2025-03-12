@@ -2,10 +2,13 @@
 name = "fontgrep"
 version = "0.2.0"
 edition = "2021"
-authors = ["Adam Twardoch <adam@twardoch.com>"]
+authors = [
+    "Simon Cozens <simon@simon-cozens.org>",
+    "Adam Twardoch <adam@twardoch.com>",
+]
 description = "A tool to search for fonts based on various criteria"
 license = "MIT"
-repository = "https://github.com/twardoch/fontgrep"
+repository = "https://github.com/simoncozens/fontgrep"
 readme = "README.md"
 keywords = ["font", "search", "opentype", "typography"]
 categories = ["command-line-utilities", "text-processing"]
