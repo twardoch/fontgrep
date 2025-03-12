@@ -7,11 +7,12 @@ use crate::{
     font::{is_font_file, FontInfo},
     matchers::{
         AxesMatcher, CodepointsMatcher, FeaturesMatcher, FontMatcher, NameMatcher, ScriptsMatcher,
-        TablesMatcher, VariableFontMatcher,
+        TablesMatcher,
     },
     Result,
 };
 use rayon::prelude::*;
+use skrifa::Tag;
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -33,6 +34,15 @@ impl From<&SearchArgs> for FontQuery {
     fn from(args: &SearchArgs) -> Self {
         let mut matchers: Vec<Box<dyn FontMatcher>> = Vec::new();
 
+        // Matches should be added from quickest / most effective filter to slowest
+        if args.variable {
+            matchers.push(Box::new(TablesMatcher::new(&[Tag::new(b"fvar")])));
+        }
+
+        if !args.tables.is_empty() {
+            matchers.push(Box::new(TablesMatcher::new(&args.tables)));
+        }
+
         if !args.axes.is_empty() {
             matchers.push(Box::new(AxesMatcher::new(&args.axes)));
         }
@@ -43,14 +53,6 @@ impl From<&SearchArgs> for FontQuery {
 
         if !args.scripts.is_empty() {
             matchers.push(Box::new(ScriptsMatcher::new(&args.scripts)));
-        }
-
-        if !args.tables.is_empty() {
-            matchers.push(Box::new(TablesMatcher::new(&args.tables)));
-        }
-
-        if args.variable {
-            matchers.push(Box::new(VariableFontMatcher::new()));
         }
 
         if !args.name.is_empty() {

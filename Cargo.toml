@@ -36,6 +36,7 @@ num_cpus = "1.16.0"
 memmap2 = "0.5.10"
 env_logger = "0.11.2"
 log = "0.4.20"
+itertools = "0.14.0"
 
 [dev-dependencies]
 tempfile = "3.8.0"
@@ -45,4 +46,5 @@ criterion = "0.5.1"
 lto = true
 codegen-units = 1
 opt-level = 3
-strip = true
+#strip = true
+debug = true

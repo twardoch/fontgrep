@@ -289,21 +289,23 @@ fn output_results(results: &[String], json_output: bool) -> Result<()> {
 
 /// Output font info
 fn output_font_info(info: &FontInfo, detailed: bool, json_output: bool) -> Result<()> {
-    if json_output {
-        let json = serde_json::to_string_pretty(info)?;
-        println!("{}", json);
-    } else {
-        println!("Name: {}", info.name_string);
-        println!("Variable: {}", info.is_variable);
+    // We'll come back to this soon.
 
-        if detailed {
-            println!("Axes: {}", info.axes.join(", "));
-            println!("Features: {}", info.features.join(", "));
-            println!("Scripts: {}", info.scripts.join(", "));
-            println!("Tables: {}", info.tables.join(", "));
-            println!("Charset: {}", info.charset_string);
-        }
-    }
+    // if json_output {
+    //     let json = serde_json::to_string_pretty(info)?;
+    //     println!("{}", json);
+    // } else {
+    //     println!("Name: {}", info.name_string);
+    //     println!("Variable: {}", info.is_variable);
+
+    //     if detailed {
+    //         println!("Axes: {}", info.axes.join(", "));
+    //         println!("Features: {}", info.features.join(", "));
+    //         println!("Scripts: {}", info.scripts.join(", "));
+    //         println!("Tables: {}", info.tables.join(", "));
+    //         println!("Charset: {}", info.charset_string);
+    //     }
+    // }
 
     Ok(())
 }
