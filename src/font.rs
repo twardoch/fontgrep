@@ -85,7 +85,7 @@ impl FontInfo {
 fn load_font(path: &Path) -> Result<FontRef<'static>> {
     let file = File::open(path)?;
     let data = Box::leak(Box::new(unsafe {
-        Mmap::map(&file).map_err(|e| FontgrepError::Io(e.to_string()))?
+        Mmap::map(&file).map_err(|e| FontgrepError::Mmap(e.to_string()))?
     }));
     FontRef::new(data).map_err(|e| FontgrepError::Font(e.to_string()))
 }
