@@ -28,34 +28,6 @@ pub enum FontgrepError {
     #[error("Memory mapping error: {0}")]
     Mmap(String),
 
-    /// Font loading errors
-    #[error("Font loading error: {0}")]
-    FontLoad(String),
-
-    /// Font feature errors
-    #[error("Font feature error: {0}")]
-    Feature(String),
-
-    /// Font script errors
-    #[error("Font script error: {0}")]
-    Script(String),
-
-    /// Font table errors
-    #[error("Font table error: {0}")]
-    Table(String),
-
-    /// Font name errors
-    #[error("Font name error: {0}")]
-    Name(String),
-
-    /// Font charset errors
-    #[error("Font charset error: {0}")]
-    Charset(String),
-
-    /// Configuration errors
-    #[error("Configuration error: {0}")]
-    Config(String),
-
     /// Other errors
     #[error("Error: {0}")]
     Other(String),
