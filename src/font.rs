@@ -79,16 +79,6 @@ impl FontInfo {
             charset_string,
         })
     }
-
-    /// Check if a file is a font file based on its extension
-    pub fn is_font_file(path: &Path) -> bool {
-        if let Some(ext) = path.extension() {
-            let ext_str = ext.to_string_lossy().to_lowercase();
-            matches!(ext_str.as_str(), "ttf" | "otf" | "ttc" | "otc")
-        } else {
-            false
-        }
-    }
 }
 
 /// Load a font from a file with optimized memory mapping
@@ -102,9 +92,13 @@ pub fn load_font(path: &Path) -> Result<FontRef<'static>> {
 
 /// Check if a file is a font based on its extension
 pub fn is_font_file(path: &Path) -> bool {
-    FontInfo::is_font_file(path)
+    if let Some(ext) = path.extension() {
+        let ext_str = ext.to_string_lossy().to_lowercase();
+        matches!(ext_str.as_str(), "ttf" | "otf" | "ttc" | "otc")
+    } else {
+        false
+    }
 }
-
 /// Create a charset from a font with optimized implementation
 pub fn create_charset(font: &FontRef) -> BTreeSet<u32> {
     let mut charset = BTreeSet::new();
