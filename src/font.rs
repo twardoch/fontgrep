@@ -8,25 +8,26 @@ use skrifa::FontRef;
 use std::{fs::File, path::Path};
 
 /// Font information extracted from a font file
-pub struct FontInfo<'a> {
-    pub(crate) font: FontRef<'a>,
+pub struct FontInfo {
+    pub font_data: Mmap,
+    // pub(crate) font: FontRef<'a>,
 }
 
-impl FontInfo<'_> {
+impl FontInfo {
     /// Load font information from a file
-    pub fn load(path: &Path) -> Result<Self> {
-        let font = load_font(path)?;
-        Ok(Self { font })
-    }
-}
+    pub fn load(path: &Path) -> Result<FontInfo> {
+        let file = File::open(path)?;
+        let data = unsafe { Mmap::map(&file).map_err(|e| FontgrepError::Mmap(e.to_string()))? };
+        // Check we can do the thing.
+        FontRef::new(&data).map_err(|e| FontgrepError::Font(e.to_string()))?;
 
-/// Load a font from a file with optimized memory mapping
-fn load_font(path: &Path) -> Result<FontRef<'static>> {
-    let file = File::open(path)?;
-    let data = Box::leak(Box::new(unsafe {
-        Mmap::map(&file).map_err(|e| FontgrepError::Mmap(e.to_string()))?
-    }));
-    FontRef::new(data).map_err(|e| FontgrepError::Font(e.to_string()))
+        Ok(Self { font_data: data })
+    }
+
+    pub fn font(&self) -> FontRef<'_> {
+        // We already checked we can do the thing
+        FontRef::new(&self.font_data).unwrap()
+    }
 }
 
 /// Check if a file is a font based on its extension
