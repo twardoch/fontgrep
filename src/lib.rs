@@ -80,19 +80,14 @@ pub enum FontgrepError {
 }
 
 /// Result type for fontgrep
-pub type Result<T> = std::result::Result<T, FontgrepError>;
+type Result<T> = std::result::Result<T, FontgrepError>;
 
 // Re-export modules
-pub mod cache;
+mod cache;
 pub mod cli;
-pub mod font;
-pub mod query;
-pub mod utils;
-
-// Re-export important types
-pub use cache::FontCache;
-pub use font::FontInfo;
-pub use query::{FontQuery, QueryCriteria};
+mod font;
+mod query;
+mod utils;
 
 // Implement From for common error types
 impl From<std::io::Error> for FontgrepError {

@@ -1,7 +1,6 @@
 // fontgrep - A tool for finding fonts with specific features
 //
 // this_file: fontgrep/src/main.rs
-
 use clap::Parser;
 use env_logger::{Builder, Env};
 use fontgrep::cli;
