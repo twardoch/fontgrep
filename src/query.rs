@@ -195,11 +195,11 @@ impl FontQuery {
 
         // If criteria is empty, return all fonts
         if self.criteria.is_empty() {
-            return Ok(cache.get_all_font_paths()?);
+            return cache.get_all_font_paths();
         }
 
         // Otherwise, query with criteria
-        Ok(cache.query(&self.criteria)?)
+        cache.query(&self.criteria)
     }
 
     /// Query the cache with path filtering
@@ -483,7 +483,7 @@ impl FontQuery {
             .as_ref()
             .ok_or_else(|| FontgrepError::Cache("Cache not initialized".to_string()))?;
 
-        Ok(cache.get_all_font_paths()?)
+        cache.get_all_font_paths()
     }
 
     /// Clean the cache by removing missing fonts
