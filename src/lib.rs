@@ -113,17 +113,6 @@ impl From<&str> for FontgrepError {
     }
 }
 
-/// Helper function to add context to errors
-pub fn with_context<T, C>(result: Result<T>, context: C) -> Result<T>
-where
-    C: FnOnce() -> String,
-{
-    result.map_err(|e| {
-        let ctx = context();
-        FontgrepError::Other(format!("{}: {}", ctx, e))
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,20 +136,6 @@ mod tests {
         match fontgrep_err {
             FontgrepError::Other(msg) => assert_eq!(msg, "test error"),
             _ => panic!("Expected Other error"),
-        }
-    }
-
-    #[test]
-    fn test_error_context() {
-        let result: Result<()> = Err(FontgrepError::Io("file not found".to_string()));
-        let with_ctx = with_context(result, || "Failed to open font file".to_string());
-
-        match with_ctx {
-            Err(FontgrepError::Other(msg)) => {
-                assert!(msg.contains("Failed to open font file"));
-                assert!(msg.contains("file not found"));
-            }
-            _ => panic!("Expected error with context"),
         }
     }
 }
