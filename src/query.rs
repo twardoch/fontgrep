@@ -13,7 +13,8 @@ use regex::Regex;
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, mpsc},
+    thread,
 };
 use walkdir::WalkDir;
 
@@ -246,6 +247,16 @@ impl FontQuery {
         // Process font files in parallel
         let matching_fonts = Arc::new(Mutex::new(Vec::new()));
         
+        // Create a channel for immediate printing
+        let (tx, rx) = mpsc::channel();
+        
+        // Spawn a thread to print results as they come in
+        let printer_thread = thread::spawn(move || {
+            for path in rx {
+                println!("{}", path);
+            }
+        });
+        
         // Configure thread pool
         rayon::ThreadPoolBuilder::new()
             .num_threads(self.jobs)
@@ -257,8 +268,14 @@ impl FontQuery {
             match self.process_font_file(path) {
                 Ok(true) => {
                     // Font matches criteria
+                    let path_str = path.to_string_lossy().to_string();
+                    
+                    // Send to printer thread for immediate output
+                    let _ = tx.send(path_str.clone());
+                    
+                    // Also collect for return value
                     let mut fonts = matching_fonts.lock().unwrap();
-                    fonts.push(path.to_string_lossy().to_string());
+                    fonts.push(path_str);
                 },
                 Ok(false) => {
                     // Font doesn't match criteria
@@ -268,6 +285,12 @@ impl FontQuery {
                 }
             }
         });
+        
+        // Drop the sender to signal the printer thread to exit
+        drop(tx);
+        
+        // Wait for printer thread to finish
+        let _ = printer_thread.join();
         
         // Return the matching fonts
         let result = matching_fonts.lock().unwrap().clone();

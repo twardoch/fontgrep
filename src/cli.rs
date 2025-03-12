@@ -457,9 +457,8 @@ fn output_results(results: &[String], json_output: bool) -> Result<()> {
         let json = serde_json::to_string_pretty(results)?;
         println!("{}", json);
     } else {
-        for result in results {
-            println!("{}", result);
-        }
+        // In text mode, results are already printed by the search_directories method
+        // So we don't need to print them again
     }
     
     Ok(())
