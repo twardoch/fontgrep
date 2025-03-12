@@ -170,7 +170,7 @@ impl FontQuery {
     
     /// Query the cache
     fn query_cache(&self, paths: &[PathBuf]) -> Result<Vec<String>> {
-        let cache = self.cache.as_ref().ok_or_else(|| {
+        let _cache = self.cache.as_ref().ok_or_else(|| {
             FontgrepError::Cache("Cache not initialized".to_string())
         })?;
         
@@ -305,7 +305,7 @@ impl FontQuery {
     /// Check if a font matches the criteria
     fn font_matches(&self, font_info: &FontInfo) -> Result<bool> {
         // Create matchers for each criteria
-        let matches = true;
+        let _matches = true;
         
         // Check variable font
         if self.criteria.variable && !font_info.is_variable {
@@ -380,8 +380,8 @@ impl FontQuery {
         let font_files = self.collect_font_files(paths)?;
         
         // Process font files in batches
-        let processed = 0;
-        let total = font_files.len();
+        let _processed = 0;
+        let _total = font_files.len();
         
         // Configure thread pool
         rayon::ThreadPoolBuilder::new()

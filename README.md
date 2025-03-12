@@ -13,7 +13,7 @@ A command-line tool for searching and analyzing font files based on various crit
   - Font name patterns
 - Fast searching with SQLite-based caching
 - Parallel processing for improved performance
-- Multiple output formats (text, JSON, CSV)
+- Output in text or JSON format
 - Detailed font information display
 
 ## Installation
@@ -24,60 +24,80 @@ cargo install fontgrep
 
 ## Usage
 
-### Basic Search
+### Basic Font Searching
 
 ```bash
-# Search for variable fonts
-fontgrep search --variable /path/to/fonts
+# Find variable fonts (without cache)
+fontgrep find --variable /path/to/fonts
 
-# Search for fonts with specific features
-fontgrep search -f smcp,onum /path/to/fonts
+# Find fonts with specific features (without cache)
+fontgrep find -f smcp,onum /path/to/fonts
 
-# Search for fonts supporting specific scripts
-fontgrep search -s latn,cyrl /path/to/fonts
+# Find fonts supporting specific scripts (without cache)
+fontgrep find -s latn,cyrl /path/to/fonts
 
-# Search for fonts by name pattern
-fontgrep search -n "Roboto.*Mono" /path/to/fonts
+# Find fonts by name pattern (without cache)
+fontgrep find -n "Roboto.*Mono" /path/to/fonts
 
-# Search for fonts supporting specific Unicode ranges
-fontgrep search -u "U+0041-U+005A,U+0061-U+007A" /path/to/fonts
+# Find fonts supporting specific Unicode ranges (without cache)
+fontgrep find -u "U+0041-U+005A,U+0061-U+007A" /path/to/fonts
+
+# Find fonts with specific tables (without cache)
+fontgrep find -T GPOS,GSUB /path/to/fonts
+```
+
+### Fast Searching with Cache
+
+```bash
+# Fast search for variable fonts (with cache)
+fontgrep fast --variable /path/to/fonts
+
+# Fast search for fonts with specific features (with cache)
+fontgrep fast -f smcp,onum /path/to/fonts
 ```
 
 ### Cache Management
 
 ```bash
-# Update the font cache
-fontgrep update /path/to/fonts
+# Save fonts to the cache
+fontgrep save /path/to/fonts
 
-# Clean the cache (remove missing fonts)
-fontgrep clean
+# Force update the cache even if fonts haven't changed
+fontgrep save --force /path/to/fonts
 
-# List all cached fonts
-fontgrep list
+# List all saved fonts in the cache
+fontgrep saved
+
+# Remove missing fonts from the cache
+fontgrep forget
 ```
 
 ### Font Information
 
 ```bash
+# Show information about a font
+fontgrep font /path/to/font.ttf
+
 # Show detailed information about a font
-fontgrep info -d /path/to/font.ttf
+fontgrep font -d /path/to/font.ttf
 ```
 
 ### Output Formats
 
 ```bash
 # Output in JSON format
-fontgrep search --format json /path/to/fonts
+fontgrep find -j /path/to/fonts
 
-# Output in CSV format
-fontgrep search --format csv /path/to/fonts
+# Output in JSON format (alternative)
+fontgrep --json find /path/to/fonts
 ```
 
 ## Configuration
 
-- Cache location: By default, the cache is stored in the user's data directory. Use `--cache` to specify a custom location.
-- Parallel jobs: Use `-j/--jobs` to control the number of parallel jobs (defaults to CPU core count).
-- Verbose output: Use `-v/--verbose` for detailed logging.
+- **Cache Commands**: Use `fast` for cached searches and `find` for direct searches without cache.
+- **Cache Location**: Use `--cache-path` to specify a custom cache location (defaults to user's data directory).
+- **Parallel Jobs**: Use `-j/--jobs` to control the number of parallel jobs (defaults to CPU core count).
+- **Verbose Output**: Use `-v/--verbose` for detailed logging.
 
 ## Performance
 
