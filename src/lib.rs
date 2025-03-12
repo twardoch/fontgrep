@@ -66,6 +66,7 @@ type Result<T> = std::result::Result<T, FontgrepError>;
 
 pub mod cli;
 mod font;
+mod matchers;
 mod query;
 
 // Implement From for common error types

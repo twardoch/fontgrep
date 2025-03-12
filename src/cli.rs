@@ -2,12 +2,9 @@
 //
 // Command-line interface for fontgrep
 
-use crate::{
-    font::FontInfo,
-    query::{FontQuery, QueryCriteria},
-    FontgrepError, Result,
-};
+use crate::{font::FontInfo, query::FontQuery, FontgrepError, Result};
 use clap::{Args as ClapArgs, Parser, Subcommand};
+use regex::Regex;
 use skrifa::Tag;
 use std::path::PathBuf;
 
@@ -128,7 +125,7 @@ pub(crate) struct SearchArgs {
                     - BASE: Baseline\n\
                     - OS/2: OS/2 and Windows Metrics"
     )]
-    pub tables: Vec<String>,
+    pub tables: Vec<Tag>,
 
     /// Only show variable fonts
     #[arg(
@@ -147,13 +144,13 @@ pub(crate) struct SearchArgs {
         long_help = "One or more regular expressions to match against font names. \
                     The search is case-insensitive and matches anywhere in the name."
     )]
-    pub name: Vec<String>,
+    pub name: Vec<Regex>,
 
     /// Unicode codepoints or ranges to search for
     #[arg(
         short = 'u',
         long,
-        value_delimiter = ',',
+        value_parser = parse_codepoints,
         help = "Unicode codepoints or ranges to search for (e.g., U+0041-U+005A,U+0061)",
         long_help = "Comma-separated list of Unicode codepoints or ranges to search for. \
                     Formats accepted:\n\
@@ -161,7 +158,7 @@ pub(crate) struct SearchArgs {
                     - Range: U+0041-U+005A\n\
                     - Single character: A"
     )]
-    pub codepoints: Vec<String>,
+    pub codepoints: Vec<char>,
 
     /// Text to check for support
     #[arg(
@@ -201,14 +198,8 @@ struct InfoArgs {
 pub fn execute(cli: Cli) -> Result<()> {
     match &cli.command {
         Commands::Find(args) => {
-            // Create query criteria
-            let criteria = args_to_query_criteria(args)?;
-
-            // Create font query
-            let query = FontQuery::new(criteria, args.jobs);
-
-            // Execute query
-            let results = query.execute(&args.paths)?;
+            let query = FontQuery::from(args);
+            let results = query.execute()?;
 
             // Output results
             output_results(&results, cli.json)?;
@@ -225,64 +216,11 @@ pub fn execute(cli: Cli) -> Result<()> {
     Ok(())
 }
 
-/// Parse a list of table tags from strings
-pub fn parse_table_tags(input: &[String]) -> Result<Vec<Tag>> {
-    let mut result = Vec::new();
-
-    for item in input {
-        if item.len() != 4 {
-            return Err(FontgrepError::Parse(format!("Invalid table tag: {}", item)));
-        }
-
-        // Create a Tag from a 4-byte string
-        let bytes = item.as_bytes();
-        let tag = Tag::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-        result.push(tag);
-    }
-
-    Ok(result)
-}
-
-/// Convert CLI arguments to a query criteria
-pub fn args_to_query_criteria(args: &SearchArgs) -> Result<QueryCriteria> {
-    // Parse codepoints
-    let mut codepoints = Vec::new();
-    if !args.codepoints.is_empty() {
-        codepoints = parse_codepoints(&args.codepoints)?;
-    }
-
-    // Parse text
-    if let Some(text) = &args.text {
-        codepoints.extend(text.chars());
-    }
-
-    // Parse table tags and convert to strings
-    let tables_tags = parse_table_tags(&args.tables)?;
-    let tables: Vec<String> = tables_tags.iter().map(|tag| tag.to_string()).collect();
-
-    // Compile name regexes
-    let mut name_patterns = Vec::new();
-    for pattern in &args.name {
-        // Store the pattern string instead of the compiled regex
-        name_patterns.push(pattern.clone());
-    }
-
-    Ok(QueryCriteria::new(
-        args.axes.clone(),
-        codepoints,
-        args.features.clone(),
-        args.scripts.clone(),
-        tables,
-        name_patterns,
-        args.variable,
-    ))
-}
-
 /// Parse codepoints from strings
-pub fn parse_codepoints(input: &[String]) -> Result<Vec<char>> {
+pub fn parse_codepoints(input: &str) -> Result<Vec<char>> {
     let mut result = Vec::new();
 
-    for item in input {
+    for item in input.split(",") {
         if item.contains('-') {
             // Parse range
             let parts: Vec<&str> = item.split('-').collect();
@@ -384,17 +322,8 @@ mod tests {
 
     #[test]
     fn test_parse_codepoints() {
-        let input = vec!["A".to_string(), "U+0042-U+0044".to_string()];
-        let result = parse_codepoints(&input).unwrap();
+        let input = "A,U+0042-U+0044";
+        let result = parse_codepoints(input).unwrap();
         assert_eq!(result, vec!['A', 'B', 'C', 'D']);
-    }
-
-    #[test]
-    fn test_parse_table_tags() {
-        let input = vec!["GPOS".to_string(), "GSUB".to_string()];
-        let result = parse_table_tags(&input).unwrap();
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].to_string(), "GPOS");
-        assert_eq!(result[1].to_string(), "GSUB");
     }
 }
