@@ -466,7 +466,7 @@ impl<'a> TransactionGuard<'a> {
     }
 }
 
-impl<'a> Drop for TransactionGuard<'a> {
+impl Drop for TransactionGuard<'_> {
     fn drop(&mut self) {
         if let Some(tx) = self.tx.take() {
             let _ = tx.rollback();
