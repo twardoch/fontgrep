@@ -11,13 +11,12 @@ use crate::{
     },
     Result,
 };
-use rayon::prelude::*;
+use jwalk::WalkDir;
 use skrifa::Tag;
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
-use walkdir::WalkDir;
 
 /// Criteria for querying fonts
 #[derive(Default)]
@@ -78,63 +77,72 @@ impl From<&SearchArgs> for FontQuery {
 
 impl FontQuery {
     /// Execute the query
-    pub fn execute(&self) -> Result<Vec<String>> {
-        // Collect all font files from the specified paths
-        let font_files = self.collect_font_files(&self.paths)?;
-
-        // Process font files in parallel
+    pub fn execute(&self, json_output: bool) -> Result<Vec<String>> {
+        // For collecting results (needed for JSON output)
         let matching_fonts = Arc::new(Mutex::new(Vec::new()));
 
-        // Configure thread pool
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(self.jobs)
-            .build_global()
-            .unwrap_or_default();
-
-        // Process files in parallel
-        font_files.par_iter().for_each(|path| {
-            match self.process_font_file(path) {
-                Ok(true) => {
-                    // Font matches criteria
-                    let mut fonts = matching_fonts.lock().unwrap();
-                    fonts.push(path.to_string_lossy().to_string());
-                }
-                Ok(false) => {
-                    // Font doesn't match criteria
-                }
-                Err(e) => {
-                    eprintln!("Error processing font {}: {}", path.display(), e);
-                }
-            }
-        });
-
-        // Return the matching fonts
-        let result = matching_fonts.lock().unwrap().clone();
-        Ok(result)
-    }
-
-    /// Collect all font files from the specified paths
-    fn collect_font_files(&self, paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
-        let mut font_files = Vec::new();
-
-        for path in paths {
+        // Process each path
+        for path in &self.paths {
             if path.is_file() {
-                // If it's a file, check if it's a font file
+                // If it's a file, process it directly
                 if is_font_file(path) {
-                    font_files.push(path.clone());
-                }
-            } else if path.is_dir() {
-                // If it's a directory, walk it recursively
-                for entry in WalkDir::new(path).follow_links(true) {
-                    match entry {
-                        Ok(entry) => {
-                            let entry_path = entry.path();
-                            if entry_path.is_file() && is_font_file(entry_path) {
-                                font_files.push(entry_path.to_path_buf());
+                    match self.process_font_file(path) {
+                        Ok(true) => {
+                            // Font matches criteria
+                            let path_str = path.to_string_lossy().to_string();
+                            if !json_output {
+                                println!("{}", path_str);
                             }
+                            let mut fonts = matching_fonts.lock().unwrap();
+                            fonts.push(path_str);
+                        }
+                        Ok(false) => {
+                            // Font doesn't match criteria
                         }
                         Err(e) => {
-                            eprintln!("Error walking directory {}: {}", path.display(), e);
+                            eprintln!("Error processing font {}: {}", path.display(), e);
+                        }
+                    }
+                }
+            } else if path.is_dir() {
+                // If it's a directory, walk it recursively using jwalk
+                // jwalk is already parallelized internally
+                let walker = WalkDir::new(path)
+                    .parallelism(jwalk::Parallelism::RayonNewPool(self.jobs))
+                    .process_read_dir(move |_depth, _path, _read_dir_state, children| {
+                        children.retain(|dir_entry_result| {
+                            dir_entry_result
+                                .as_ref()
+                                .map(|dir_entry| {
+                                    dir_entry.file_type().is_dir()
+                                        || (dir_entry.file_type().is_file()
+                                            && is_font_file(&dir_entry.path()))
+                                })
+                                .unwrap_or(false)
+                        });
+                    })
+                    .sort(true);
+
+                for entry in walker.into_iter().flatten() {
+                    if entry.file_type().is_dir() {
+                        continue;
+                    }
+
+                    match self.process_font_file(&entry.path()) {
+                        Ok(true) => {
+                            // Font matches criteria
+                            let path_str = entry.path().to_string_lossy().to_string();
+                            if !json_output {
+                                println!("{}", path_str);
+                            }
+                            let mut fonts = matching_fonts.lock().unwrap();
+                            fonts.push(path_str);
+                        }
+                        Ok(false) => {
+                            // Font doesn't match criteria
+                        }
+                        Err(e) => {
+                            eprintln!("Error processing font {}: {}", entry.path().display(), e);
                         }
                     }
                 }
@@ -143,7 +151,9 @@ impl FontQuery {
             }
         }
 
-        Ok(font_files)
+        // Return the matching fonts
+        let result = matching_fonts.lock().unwrap().clone();
+        Ok(result)
     }
 
     /// Process a font file
