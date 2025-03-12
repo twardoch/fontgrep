@@ -14,7 +14,6 @@ use std::path::PathBuf;
 /// Command-line arguments for fontgrep
 #[derive(Parser, Debug)]
 #[command(
-    author = "Adam Twardoch <adam@twardoch.com>",
     version,
     about = "A tool to search for fonts based on various criteria",
     long_about = "fontgrep is a command-line tool that helps you find fonts based on their properties, such as OpenType features, variation axes, scripts, and more. It can search through directories of font files and maintain a cache for faster subsequent searches."
@@ -23,16 +22,6 @@ pub struct Cli {
     /// Subcommand to execute
     #[command(subcommand)]
     pub command: Commands,
-
-    /// Path to the cache file
-    #[arg(
-        long,
-        value_name = "FILE",
-        help = "Path to the cache file",
-        long_help = "Path to the SQLite database file used for caching font information. \
-                    If not specified, defaults to a file in the user's data directory."
-    )]
-    pub cache_path: Option<String>,
 
     /// Enable verbose output
     #[arg(
@@ -61,20 +50,8 @@ pub enum Commands {
     /// Find fonts based on various criteria (without cache)
     Find(SearchArgs),
 
-    /// Find fonts based on various criteria (with cache)
-    Fast(SearchArgs),
-
-    /// Save fonts to the cache
-    Save(UpdateArgs),
-
     /// Show information about a font
     Font(InfoArgs),
-
-    /// List all fonts in the cache
-    Saved,
-
-    /// Remove missing fonts from the cache
-    Forget,
 }
 
 /// Arguments for the search command
@@ -238,25 +215,13 @@ pub struct InfoArgs {
 
 /// Execute the command
 pub fn execute(cli: Cli) -> Result<()> {
-    // Determine cache path and whether to use cache
-    let use_cache = matches!(
-        &cli.command,
-        Commands::Fast(_) | Commands::Save(_) | Commands::Saved | Commands::Forget
-    );
-
-    let cache_path = if use_cache {
-        Some(cli.cache_path.as_deref())
-    } else {
-        None
-    };
-
     match &cli.command {
-        Commands::Find(args) | Commands::Fast(args) => {
+        Commands::Find(args) => {
             // Create query criteria
             let criteria = args_to_query_criteria(args)?;
 
             // Create font query
-            let query = FontQuery::new(criteria, use_cache, cache_path.unwrap_or(None), args.jobs);
+            let query = FontQuery::new(criteria, args.jobs);
 
             // Execute query
             let results = query.execute(&args.paths)?;
@@ -264,79 +229,12 @@ pub fn execute(cli: Cli) -> Result<()> {
             // Output results
             output_results(&results, cli.json)?;
         }
-        Commands::Save(args) => {
-            // Create an empty query
-            let query = FontQuery::new(
-                QueryCriteria::new(
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                    false,
-                ),
-                use_cache,
-                cache_path.unwrap_or(None),
-                args.jobs,
-            );
-
-            // Update cache
-            query.update_cache(&args.paths, args.force)?;
-
-            println!("Fonts saved to cache successfully");
-        }
         Commands::Font(args) => {
             // Load font
             let font_info = FontInfo::load(&args.path)?;
 
             // Output font info
             output_font_info(&font_info, args.detailed, cli.json)?;
-        }
-        Commands::Saved => {
-            // Create an empty query
-            let query = FontQuery::new(
-                QueryCriteria::new(
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                    false,
-                ),
-                use_cache,
-                cache_path.unwrap_or(None),
-                num_cpus::get(),
-            );
-
-            // List all fonts in the cache
-            let results = query.list_all_fonts()?;
-
-            // Output results
-            output_results(&results, cli.json)?;
-        }
-        Commands::Forget => {
-            // Create an empty query
-            let query = FontQuery::new(
-                QueryCriteria::new(
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                    false,
-                ),
-                use_cache,
-                cache_path.unwrap_or(None),
-                num_cpus::get(),
-            );
-
-            // Clean the cache
-            query.clean_cache()?;
-
-            println!("Missing fonts removed from cache successfully");
         }
     }
 

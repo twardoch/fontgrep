@@ -18,21 +18,9 @@ pub enum FontgrepError {
     #[error("Font error: {0}")]
     Font(String),
 
-    /// Database errors
-    #[error("Database error: {0}")]
-    Database(#[from] rusqlite::Error),
-
-    /// Cache errors
-    #[error("Cache error: {0}")]
-    Cache(String),
-
     /// Parsing errors
     #[error("Parse error: {0}")]
     Parse(String),
-
-    /// Connection pool errors
-    #[error("Connection pool error: {0}")]
-    Pool(#[from] r2d2::Error),
 
     /// Serialization errors
     #[error("Serialization error: {0}")]
@@ -82,12 +70,9 @@ pub enum FontgrepError {
 /// Result type for fontgrep
 type Result<T> = std::result::Result<T, FontgrepError>;
 
-// Re-export modules
-mod cache;
 pub mod cli;
 mod font;
 mod query;
-mod utils;
 
 // Implement From for common error types
 impl From<std::io::Error> for FontgrepError {
