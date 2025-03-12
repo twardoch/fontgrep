@@ -18,8 +18,8 @@ jobs:
         with:
           submodules: recursive
       - run: rustup toolchain update nightly && rustup default nightly
-      - name: Build
-        run: cargo build
+      - run: rustup component add rustfmt clippy
+      - run: cargo build
       - name: Lint for formatting
         run: cargo fmt --all -- --check
       - name: Lint for warnings
