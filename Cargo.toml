@@ -1,10 +1,10 @@
 [package]
 name = "fontgrep"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = [
     "Simon Cozens <simon@simon-cozens.org>",
-    "Adam Twardoch <adam@twardoch.com>",
+    "Adam Twardoch <adam+github@twardoch.com>",
 ]
 description = "A tool to search for fonts based on various criteria"
 license = "MIT"
@@ -26,8 +26,7 @@ path = "src/main.rs"
 skrifa = "0.28.1"
 clap = { version = "4.4.6", features = ["derive"] }
 regex = "1.9.5"
-rayon = "1.8.0"
-walkdir = "2.4.0"
+jwalk = "0.8.1"
 thiserror = "1.0.48"
 serde = { version = "1.0.188", features = ["derive"] }
 serde_json = "1.0.107"
