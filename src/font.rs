@@ -2,11 +2,11 @@
 //
 // Font information extraction and matching
 
-use crate::{Result, FontgrepError};
+use crate::{FontgrepError, Result};
 use memmap2::Mmap;
-use skrifa::{FontRef, Tag};
 use skrifa::prelude::*;
 use skrifa::raw::TableProvider;
+use skrifa::{FontRef, Tag};
 use std::{
     collections::{BTreeSet, HashSet},
     fs::File,
@@ -18,22 +18,22 @@ use std::{
 pub struct FontInfo {
     /// Font name string
     pub name_string: String,
-    
+
     /// Whether the font is variable
     pub is_variable: bool,
-    
+
     /// Variation axes
     pub axes: Vec<String>,
-    
+
     /// OpenType features
     pub features: Vec<String>,
-    
+
     /// OpenType scripts
     pub scripts: Vec<String>,
-    
+
     /// Font tables
     pub tables: Vec<String>,
-    
+
     /// Charset string
     pub charset_string: String,
 }
@@ -44,31 +44,31 @@ impl FontInfo {
         let font = load_font(path)?;
         Self::from_font(&font)
     }
-    
+
     /// Extract font information from a font reference
     pub fn from_font(font: &FontRef) -> Result<Self> {
         // Extract name string with error handling
         let name_string = extract_name_string(font);
-        
+
         // Check if font is variable with error handling
         let is_variable = has_variations(font);
-        
+
         // Extract variation axes with error handling
         let axes = extract_axes(font);
-        
+
         // Extract OpenType features with error handling
         let features = extract_features(font);
-        
+
         // Extract OpenType scripts with error handling
         let scripts = extract_scripts(font);
-        
+
         // Extract font tables with error handling
         let tables = extract_tables(font);
-        
+
         // Create charset with optimized implementation
         let charset = create_charset(font);
         let charset_string = charset_to_string(&charset);
-        
+
         Ok(FontInfo {
             name_string,
             is_variable,
@@ -79,7 +79,7 @@ impl FontInfo {
             charset_string,
         })
     }
-    
+
     /// Check if a file is a font file based on its extension
     pub fn is_font_file(path: &Path) -> bool {
         if let Some(ext) = path.extension() {
@@ -94,11 +94,10 @@ impl FontInfo {
 /// Load a font from a file with optimized memory mapping
 pub fn load_font(path: &Path) -> Result<FontRef<'static>> {
     let file = File::open(path)?;
-    let data = Box::leak(Box::new(unsafe { 
+    let data = Box::leak(Box::new(unsafe {
         Mmap::map(&file).map_err(|e| FontgrepError::Io(e.to_string()))?
     }));
-    FontRef::new(data)
-        .map_err(|e| FontgrepError::Font(e.to_string()))
+    FontRef::new(data).map_err(|e| FontgrepError::Font(e.to_string()))
 }
 
 /// Check if a file is a font based on its extension
@@ -109,10 +108,10 @@ pub fn is_font_file(path: &Path) -> bool {
 /// Create a charset from a font with optimized implementation
 pub fn create_charset(font: &FontRef) -> BTreeSet<u32> {
     let mut charset = BTreeSet::new();
-    
+
     // Get the character map from the font
     let charmap = font.charmap();
-    
+
     // If the font has a character map, extract all supported codepoints
     if charmap.has_map() {
         // Use the mappings() method to get all codepoint to glyph mappings
@@ -123,7 +122,7 @@ pub fn create_charset(font: &FontRef) -> BTreeSet<u32> {
             }
         }
     }
-    
+
     charset
 }
 
@@ -148,20 +147,20 @@ fn is_invalid_unicode(codepoint: u32) -> bool {
     // U+FDD0-U+FDEF (noncharacters)
     // U+FFFE, U+FFFF (noncharacters)
     // U+1FFFE, U+1FFFF, U+2FFFE, U+2FFFF, ... U+10FFFE, U+10FFFF (noncharacters)
-    
-    (codepoint <= 0x001F) ||
-    (codepoint == 0x007F) ||
-    (codepoint >= 0x0080 && codepoint <= 0x009F) ||
-    (codepoint >= 0xD800 && codepoint <= 0xDFFF) ||
-    (codepoint >= 0xFDD0 && codepoint <= 0xFDEF) ||
-    (codepoint == 0xFFFE || codepoint == 0xFFFF) ||
-    (codepoint & 0xFFFE) == 0xFFFE && codepoint <= 0x10FFFF
+
+    (codepoint <= 0x001F)
+        || (codepoint == 0x007F)
+        || (codepoint >= 0x0080 && codepoint <= 0x009F)
+        || (codepoint >= 0xD800 && codepoint <= 0xDFFF)
+        || (codepoint >= 0xFDD0 && codepoint <= 0xFDEF)
+        || (codepoint == 0xFFFE || codepoint == 0xFFFF)
+        || (codepoint & 0xFFFE) == 0xFFFE && codepoint <= 0x10FFFF
 }
 
 /// Extract the name string from a font with improved name record handling
 fn extract_name_string(font: &FontRef) -> String {
     let mut name_strings = HashSet::new();
-    
+
     if let Ok(name) = font.name() {
         // Extract all name records
         for record in name.name_record() {
@@ -170,7 +169,7 @@ fn extract_name_string(font: &FontRef) -> String {
             }
         }
     }
-    
+
     name_strings.into_iter().collect::<Vec<_>>().join(" ")
 }
 
@@ -181,13 +180,16 @@ fn has_variations(font: &FontRef) -> bool {
 
 /// Extract variation axes from a font
 fn extract_axes(font: &FontRef) -> Vec<String> {
-    font.axes().iter().map(|axis| axis.tag().to_string()).collect()
+    font.axes()
+        .iter()
+        .map(|axis| axis.tag().to_string())
+        .collect()
 }
 
 /// Extract OpenType features from a font
 fn extract_features(font: &FontRef) -> Vec<String> {
     let mut features = HashSet::new();
-    
+
     // Extract GSUB features
     if let Ok(gsub) = font.gsub() {
         if let Ok(feature_list) = gsub.feature_list() {
@@ -196,7 +198,7 @@ fn extract_features(font: &FontRef) -> Vec<String> {
             }
         }
     }
-    
+
     // Extract GPOS features
     if let Ok(gpos) = font.gpos() {
         if let Ok(feature_list) = gpos.feature_list() {
@@ -205,14 +207,14 @@ fn extract_features(font: &FontRef) -> Vec<String> {
             }
         }
     }
-    
+
     features.into_iter().collect()
 }
 
 /// Extract OpenType scripts from a font
 fn extract_scripts(font: &FontRef) -> Vec<String> {
     let mut scripts = HashSet::new();
-    
+
     // Extract GSUB scripts
     if let Ok(gsub) = font.gsub() {
         if let Ok(script_list) = gsub.script_list() {
@@ -221,7 +223,7 @@ fn extract_scripts(font: &FontRef) -> Vec<String> {
             }
         }
     }
-    
+
     // Extract GPOS scripts
     if let Ok(gpos) = font.gpos() {
         if let Ok(script_list) = gpos.script_list() {
@@ -230,13 +232,15 @@ fn extract_scripts(font: &FontRef) -> Vec<String> {
             }
         }
     }
-    
+
     scripts.into_iter().collect()
 }
 
 /// Extract font tables from a font
 fn extract_tables(font: &FontRef) -> Vec<String> {
-    font.table_directory.table_records().iter()
+    font.table_directory
+        .table_records()
+        .iter()
         .map(|record| record.tag().to_string())
         .collect()
 }
@@ -255,7 +259,9 @@ pub struct AxesMatcher {
 impl AxesMatcher {
     /// Create a new axes matcher
     pub fn new(axes: &[String]) -> Self {
-        Self { axes: axes.to_vec() }
+        Self {
+            axes: axes.to_vec(),
+        }
     }
 }
 
@@ -273,13 +279,17 @@ pub struct FeaturesMatcher {
 impl FeaturesMatcher {
     /// Create a new features matcher
     pub fn new(features: &[String]) -> Self {
-        Self { features: features.to_vec() }
+        Self {
+            features: features.to_vec(),
+        }
     }
 }
 
 impl FontMatcher for FeaturesMatcher {
     fn matches(&self, info: &FontInfo) -> bool {
-        self.features.iter().all(|feature| info.features.contains(feature))
+        self.features
+            .iter()
+            .all(|feature| info.features.contains(feature))
     }
 }
 
@@ -291,13 +301,17 @@ pub struct ScriptsMatcher {
 impl ScriptsMatcher {
     /// Create a new scripts matcher
     pub fn new(scripts: &[String]) -> Self {
-        Self { scripts: scripts.to_vec() }
+        Self {
+            scripts: scripts.to_vec(),
+        }
     }
 }
 
 impl FontMatcher for ScriptsMatcher {
     fn matches(&self, info: &FontInfo) -> bool {
-        self.scripts.iter().all(|script| info.scripts.contains(script))
+        self.scripts
+            .iter()
+            .all(|script| info.scripts.contains(script))
     }
 }
 
@@ -309,13 +323,17 @@ pub struct TablesMatcher {
 impl TablesMatcher {
     /// Create a new tables matcher
     pub fn new(tables: &[Tag]) -> Self {
-        Self { tables: tables.to_vec() }
+        Self {
+            tables: tables.to_vec(),
+        }
     }
 }
 
 impl FontMatcher for TablesMatcher {
     fn matches(&self, info: &FontInfo) -> bool {
-        self.tables.iter().all(|table| info.tables.contains(&table.to_string()))
+        self.tables
+            .iter()
+            .all(|table| info.tables.contains(&table.to_string()))
     }
 }
 
@@ -343,7 +361,9 @@ pub struct CodepointsMatcher {
 impl CodepointsMatcher {
     /// Create a new codepoints matcher
     pub fn new(codepoints: &[char]) -> Self {
-        Self { codepoints: codepoints.to_vec() }
+        Self {
+            codepoints: codepoints.to_vec(),
+        }
     }
 }
 
@@ -362,20 +382,24 @@ pub struct NameMatcher {
 impl NameMatcher {
     /// Create a new name matcher
     pub fn new(patterns: &[regex::Regex]) -> Self {
-        Self { patterns: patterns.to_vec() }
+        Self {
+            patterns: patterns.to_vec(),
+        }
     }
 }
 
 impl FontMatcher for NameMatcher {
     fn matches(&self, info: &FontInfo) -> bool {
-        self.patterns.iter().any(|pattern| pattern.is_match(&info.name_string))
+        self.patterns
+            .iter()
+            .any(|pattern| pattern.is_match(&info.name_string))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_is_invalid_unicode() {
         // Control characters
@@ -384,11 +408,11 @@ mod tests {
         assert!(is_invalid_unicode(0x007F));
         assert!(is_invalid_unicode(0x0080));
         assert!(is_invalid_unicode(0x009F));
-        
+
         // Surrogate pairs
         assert!(is_invalid_unicode(0xD800));
         assert!(is_invalid_unicode(0xDFFF));
-        
+
         // Noncharacters
         assert!(is_invalid_unicode(0xFDD0));
         assert!(is_invalid_unicode(0xFDEF));
@@ -396,12 +420,12 @@ mod tests {
         assert!(is_invalid_unicode(0xFFFF));
         assert!(is_invalid_unicode(0x1FFFE));
         assert!(is_invalid_unicode(0x10FFFE));
-        
+
         // Valid codepoints
         assert!(!is_invalid_unicode(0x0041)); // 'A'
         assert!(!is_invalid_unicode(0x1F600)); // 😀
     }
-    
+
     #[test]
     fn test_is_font_file() {
         assert!(is_font_file(Path::new("test.ttf")));
@@ -409,8 +433,8 @@ mod tests {
         assert!(is_font_file(Path::new("test.ttc")));
         assert!(is_font_file(Path::new("test.otc")));
         assert!(is_font_file(Path::new("test.TTF")));
-        
+
         assert!(!is_font_file(Path::new("test.txt")));
         assert!(!is_font_file(Path::new("test")));
     }
-} 
+}

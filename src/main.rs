@@ -4,7 +4,7 @@
 
 use clap::Parser;
 use env_logger::{Builder, Env};
-use fontgrep::{cli, Result, with_context};
+use fontgrep::{cli, with_context, Result};
 use log::{error, info};
 use std::process;
 
@@ -15,7 +15,7 @@ fn main() {
         .format_timestamp(None)
         .format_target(false)
         .init();
-    
+
     // Run the application and handle errors
     if let Err(e) = run() {
         error!("Error: {}", e);
@@ -27,15 +27,17 @@ fn main() {
 fn run() -> Result<()> {
     // Parse command-line arguments
     let cli = cli::Cli::parse();
-    
+
     // Enable verbose logging if requested
     if cli.verbose {
         log::set_max_level(log::LevelFilter::Debug);
     }
-    
+
     // Log startup information
     info!("fontgrep v{}", env!("CARGO_PKG_VERSION"));
-    
+
     // Execute the command
-    with_context(cli::execute(cli), || "Failed to execute command".to_string())
-} 
+    with_context(cli::execute(cli), || {
+        "Failed to execute command".to_string()
+    })
+}
