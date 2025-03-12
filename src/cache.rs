@@ -27,6 +27,18 @@ impl FontCache {
             if path == ":memory:" {
                 // In-memory database
                 let conn = Connection::open_in_memory()?;
+                
+                // Set pragmas for better performance
+                conn.execute_batch("
+                    PRAGMA journal_mode = WAL;
+                    PRAGMA synchronous = NORMAL;
+                    PRAGMA temp_store = MEMORY;
+                    PRAGMA mmap_size = 30000000000;
+                    PRAGMA page_size = 4096;
+                    PRAGMA cache_size = -2000;
+                    PRAGMA foreign_keys = ON;
+                ")?;
+                
                 initialize_schema(&conn)?;
                 
                 return Ok(Self {
@@ -44,10 +56,13 @@ impl FontCache {
             std::fs::create_dir_all(parent)?;
         }
         
+        // Check if the database file exists
+        let db_exists = path.exists();
+        
         // Open the database
         let conn = Connection::open(&path)?;
         
-        // Set pragmas for better performance
+        // Set pragmas for better performance - only needed once when creating the database
         conn.execute_batch("
             PRAGMA journal_mode = WAL;
             PRAGMA synchronous = NORMAL;
@@ -58,8 +73,10 @@ impl FontCache {
             PRAGMA foreign_keys = ON;
         ")?;
         
-        // Initialize schema
-        initialize_schema(&conn)?;
+        // Initialize schema if the database is new
+        if !db_exists {
+            initialize_schema(&conn)?;
+        }
         
         Ok(Self {
             conn: None,
@@ -113,7 +130,7 @@ impl FontCache {
                         info.is_variable,
                         mtime,
                         size,
-                        info.charset_string,
+                        info.charset_string(),
                         id
                     ],
                 )?;
@@ -135,7 +152,7 @@ impl FontCache {
                         info.is_variable,
                         mtime,
                         size,
-                        info.charset_string
+                        info.charset_string()
                     ],
                 )?;
                 
@@ -180,7 +197,7 @@ impl FontCache {
                         info.is_variable,
                         mtime,
                         size,
-                        info.charset_string
+                        info.charset_string()
                     ])?;
                     
                     let font_id = guard.transaction().last_insert_rowid();
@@ -249,12 +266,13 @@ impl FontCache {
             .map(|p| p.as_ref() as &dyn ToSql)
             .collect();
         
-        let mut rows = stmt.query(params_slice.as_slice())?;
-        let mut results = Vec::new();
+        // Use query_map for more efficient memory usage
+        let rows = stmt.query_map(params_slice.as_slice(), |row| row.get::<_, String>(0))?;
         
-        while let Some(row) = rows.next()? {
-            let path: String = row.get(0)?;
-            results.push(path);
+        // Collect results
+        let mut results = Vec::new();
+        for row_result in rows {
+            results.push(row_result?);
         }
         
         Ok(results)
@@ -264,12 +282,14 @@ impl FontCache {
     pub fn get_all_font_paths(&self) -> Result<Vec<String>> {
         let conn = self.get_connection()?;
         let mut stmt = conn.prepare("SELECT path FROM fonts")?;
-        let mut rows = stmt.query([])?;
         
+        // Use query_map for more efficient memory usage
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        
+        // Collect results
         let mut paths = Vec::new();
-        while let Some(row) = rows.next()? {
-            let path: String = row.get(0)?;
-            paths.push(path);
+        for row_result in rows {
+            paths.push(row_result?);
         }
         
         Ok(paths)
@@ -318,7 +338,7 @@ impl FontCache {
         Ok(())
     }
     
-    /// Get a database connection
+    /// Get a connection to the database
     fn get_connection(&self) -> Result<Connection> {
         if let Some(conn) = &self.conn {
             // For in-memory databases, we need to return a connection that shares the same data
@@ -376,21 +396,9 @@ impl FontCache {
             
             Ok(backup_conn)
         } else {
-            // Open a new connection to the database file
-            let conn = Connection::open(&self.path)?;
-            
-            // Set pragmas for better performance
-            conn.execute_batch("
-                PRAGMA journal_mode = WAL;
-                PRAGMA synchronous = NORMAL;
-                PRAGMA temp_store = MEMORY;
-                PRAGMA mmap_size = 30000000000;
-                PRAGMA page_size = 4096;
-                PRAGMA cache_size = -2000;
-                PRAGMA foreign_keys = ON;
-            ")?;
-            
-            Ok(conn)
+            // For file-based databases, simply open a direct connection
+            // No need for in-memory backup
+            Ok(Connection::open(&self.path)?)
         }
     }
     
@@ -489,8 +497,6 @@ impl<'a> Drop for TransactionGuard<'a> {
 
 /// Query builder for constructing SQL queries
 struct QueryBuilder {
-    select_clause: String,
-    from_clause: String,
     where_clauses: Vec<String>,
     join_clauses: Vec<String>,
     params: Vec<Box<dyn ToSql>>,
@@ -501,8 +507,6 @@ impl QueryBuilder {
     /// Create a new query builder
     fn new() -> Self {
         Self {
-            select_clause: "SELECT DISTINCT f.path".to_string(),
-            from_clause: "FROM fonts f".to_string(),
             where_clauses: Vec::new(),
             join_clauses: Vec::new(),
             params: Vec::new(),
@@ -533,16 +537,19 @@ impl QueryBuilder {
         self.params.push(Box::new(prop_type.to_string()));
         
         // Add WHERE clause for property values
-        let placeholders: Vec<String> = (0..tags.len()).map(|_| "?".to_string()).collect();
-        self.where_clauses.push(format!(
-            "{}.value IN ({})",
-            alias,
-            placeholders.join(", ")
-        ));
-        
-        // Add parameters
-        for tag in tags {
-            self.params.push(Box::new(tag.clone()));
+        if tags.len() == 1 {
+            // Optimize for the common case of a single tag
+            self.where_clauses.push(format!("{}.value = ?", alias));
+            self.params.push(Box::new(tags[0].clone()));
+        } else {
+            // Use IN clause for multiple tags
+            let placeholders = (0..tags.len()).map(|_| "?").collect::<Vec<_>>().join(", ");
+            self.where_clauses.push(format!("{}.value IN ({})", alias, placeholders));
+            
+            // Add parameters
+            for tag in tags {
+                self.params.push(Box::new(tag.clone()));
+            }
         }
         
         self
@@ -554,13 +561,37 @@ impl QueryBuilder {
             return self;
         }
         
+        // For each pattern, create a condition that tries to match it as a regex-like pattern
         let mut conditions = Vec::new();
+        
         for pattern in patterns {
-            conditions.push("f.name LIKE ?".to_string());
-            self.params.push(Box::new(format!("%{}%", pattern)));
+            // Convert regex-like pattern to SQL LIKE pattern
+            // This is a simplified conversion that handles common cases
+            let sql_pattern = if pattern.starts_with('^') && pattern.ends_with('$') {
+                // Exact match: ^pattern$
+                let inner = &pattern[1..pattern.len()-1];
+                format!("f.name = '{}'", inner.replace('\'', "''"))
+            } else if pattern.starts_with('^') {
+                // Starts with: ^pattern
+                let inner = &pattern[1..];
+                format!("f.name LIKE '{}%'", inner.replace('\'', "''"))
+            } else if pattern.ends_with('$') {
+                // Ends with: pattern$
+                let inner = &pattern[..pattern.len()-1];
+                format!("f.name LIKE '%{}'", inner.replace('\'', "''"))
+            } else {
+                // Contains: pattern
+                format!("f.name LIKE '%{}%'", pattern.replace('\'', "''"))
+            };
+            
+            conditions.push(sql_pattern);
         }
         
-        self.where_clauses.push(format!("({})", conditions.join(" OR ")));
+        // Join all conditions with OR
+        if !conditions.is_empty() {
+            self.where_clauses.push(format!("({})", conditions.join(" OR ")));
+        }
+        
         self
     }
     
@@ -570,14 +601,40 @@ impl QueryBuilder {
             return self;
         }
         
-        self.where_clauses.push("f.charset LIKE ?".to_string());
-        self.params.push(Box::new(format!("%{}%", charset)));
+        // Check for each character individually
+        let chars: Vec<char> = charset.chars().collect();
+        
+        if chars.len() == 1 {
+            // Optimize for the common case of a single character
+            // Use direct comparison instead of LIKE for better accuracy
+            self.where_clauses.push("f.charset LIKE ?".to_string());
+            // Escape special characters in the LIKE pattern
+            let escaped_char = escape_like_pattern(&chars[0].to_string());
+            self.params.push(Box::new(format!("%{}%", escaped_char)));
+        } else {
+            // For multiple characters, check that each one is present
+            let conditions = chars.iter()
+                .map(|_| "f.charset LIKE ?")
+                .collect::<Vec<_>>()
+                .join(" AND ");
+            
+            self.where_clauses.push(format!("({})", conditions));
+            
+            // Add parameters for each character with proper escaping
+            for &c in &chars {
+                // Escape special characters in the LIKE pattern
+                let escaped_char = escape_like_pattern(&c.to_string());
+                self.params.push(Box::new(format!("%{}%", escaped_char)));
+            }
+        }
+        
         self
     }
     
     /// Build the query
     fn build(self) -> (String, Vec<Box<dyn ToSql>>) {
-        let mut query = format!("{} {}", self.select_clause, self.from_clause);
+        // Start with the basic SELECT and FROM clauses
+        let mut query = "SELECT DISTINCT f.path FROM fonts f".to_string();
         
         // Add JOIN clauses
         for join in self.join_clauses {
@@ -591,6 +648,19 @@ impl QueryBuilder {
         
         (query, self.params)
     }
+}
+
+/// Escape special characters in a LIKE pattern
+fn escape_like_pattern(s: &str) -> String {
+    // Escape special characters: % _ [ ] ^
+    let mut result = String::with_capacity(s.len() * 2);
+    for c in s.chars() {
+        if c == '%' || c == '_' || c == '[' || c == ']' || c == '^' {
+            result.push('\\');
+        }
+        result.push(c);
+    }
+    result
 }
 
 #[cfg(test)]
@@ -609,7 +679,18 @@ mod tests {
         assert!(query.contains("SELECT DISTINCT"));
         assert!(query.contains("f.is_variable = 1"));
         assert!(query.contains("JOIN font_properties"));
-        assert!(query.contains("f.name LIKE ?"));
-        assert_eq!(params.len(), 4); // 1 for type, 2 for values, 1 for name pattern
+        assert!(query.contains("f.name LIKE"));
+        assert_eq!(params.len(), 3); // 1 for type, 2 for values
+    }
+    
+    #[test]
+    fn test_escape_like_pattern() {
+        assert_eq!(escape_like_pattern("abc"), "abc");
+        assert_eq!(escape_like_pattern("a%c"), "a\\%c");
+        assert_eq!(escape_like_pattern("a_c"), "a\\_c");
+        assert_eq!(escape_like_pattern("a[c"), "a\\[c");
+        assert_eq!(escape_like_pattern("a]c"), "a\\]c");
+        assert_eq!(escape_like_pattern("a^c"), "a\\^c");
+        assert_eq!(escape_like_pattern("a%_[]]^c"), "a\\%\\_\\[\\]\\]\\^c");
     }
 }

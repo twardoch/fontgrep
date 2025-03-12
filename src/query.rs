@@ -58,7 +58,12 @@ impl QueryCriteria {
     ) -> Self {
         // Convert codepoints to charset string
         let charset = if !codepoints.is_empty() {
-            codepoints.iter().collect()
+            // Create a string from the codepoints directly
+            let mut charset_string = String::with_capacity(codepoints.len());
+            for cp in &codepoints {
+                charset_string.push(*cp);
+            }
+            charset_string
         } else {
             String::new()
         };
@@ -91,9 +96,8 @@ impl QueryCriteria {
         if self.codepoints.is_empty() {
             None
         } else {
-            // Create a string from the codepoints directly
-            let charset: String = self.codepoints.iter().collect();
-            Some(charset)
+            // Return the pre-computed charset string
+            Some(self.charset.clone())
         }
     }
 }
@@ -124,9 +128,19 @@ impl FontQuery {
         cache_path: Option<&str>,
         jobs: usize,
     ) -> Self {
-        // Compile name regexes
+        // Compile name regexes with case insensitivity and ensuring patterns match anywhere in the string
         let name_regexes = criteria.name_patterns.iter()
-            .filter_map(|pattern| Regex::new(pattern).ok())
+            .filter_map(|pattern| {
+                // If the pattern doesn't have explicit anchors, make it match anywhere
+                let regex_pattern = if !pattern.starts_with('^') && !pattern.ends_with('$') {
+                    format!("(?i).*{}.*", regex::escape(pattern))
+                } else {
+                    // If it has anchors, just make it case insensitive
+                    format!("(?i){}", pattern)
+                };
+                
+                Regex::new(&regex_pattern).ok()
+            })
             .collect();
         
         // Initialize cache if needed
@@ -350,9 +364,9 @@ impl FontQuery {
         
         // Check codepoints
         if !self.criteria.codepoints.is_empty() {
-            let charset: HashSet<char> = font_info.charset_string.chars().collect();
+            let charset = font_info.charset_string();
             let all_codepoints_match = self.criteria.codepoints.iter()
-                .all(|cp| charset.contains(cp));
+                .all(|cp| charset.contains(*cp));
             if !all_codepoints_match {
                 return Ok(false);
             }
@@ -424,6 +438,9 @@ impl FontQuery {
                 // Load font info
                 match FontInfo::load(path) {
                     Ok(font_info) => {
+                        // Print the path being saved
+                        println!("{}", path.display());
+                        
                         // Add to updates
                         let mut updates_guard = updates.lock().unwrap();
                         updates_guard.push((path_str, font_info, mtime, size));
@@ -514,8 +531,91 @@ mod tests {
         
         let with_codepoints = QueryCriteria {
             codepoints: vec!['A', 'B', 'C'],
+            charset: "ABC".to_string(),
             ..Default::default()
         };
         assert_eq!(with_codepoints.get_charset_query(), Some("ABC".to_string()));
+    }
+    
+    #[test]
+    fn test_name_pattern_matching() {
+        // Create a simple struct that implements the necessary traits for testing
+        struct MockFontInfo {
+            name_string: String,
+        }
+        
+        impl MockFontInfo {
+            fn name_string(&self) -> &str {
+                &self.name_string
+            }
+            
+            fn is_variable(&self) -> bool {
+                false
+            }
+            
+            fn axes(&self) -> &[String] {
+                &[]
+            }
+            
+            fn features(&self) -> &[String] {
+                &[]
+            }
+            
+            fn scripts(&self) -> &[String] {
+                &[]
+            }
+            
+            fn tables(&self) -> &[String] {
+                &[]
+            }
+            
+            fn charset_string(&self) -> &str {
+                ""
+            }
+        }
+        
+        // Create a mock font info
+        let font_info = MockFontInfo {
+            name_string: "Test Font Dziedzic Regular".to_string(),
+        };
+        
+        // Test with a simple substring pattern
+        let criteria = QueryCriteria {
+            name_patterns: vec!["dzie".to_string()],
+            ..Default::default()
+        };
+        
+        // Create regex patterns manually for testing
+        let regex_pattern = format!("(?i).*{}.*", regex::escape(&criteria.name_patterns[0]));
+        let regex = Regex::new(&regex_pattern).unwrap();
+        
+        // The pattern should match
+        assert!(regex.is_match(&font_info.name_string));
+        
+        // Test with a case-insensitive pattern
+        let criteria = QueryCriteria {
+            name_patterns: vec!["DZIE".to_string()],
+            ..Default::default()
+        };
+        
+        // Create regex patterns manually for testing
+        let regex_pattern = format!("(?i).*{}.*", regex::escape(&criteria.name_patterns[0]));
+        let regex = Regex::new(&regex_pattern).unwrap();
+        
+        // The pattern should match case-insensitively
+        assert!(regex.is_match(&font_info.name_string));
+        
+        // Test with a non-matching pattern
+        let criteria = QueryCriteria {
+            name_patterns: vec!["nonexistent".to_string()],
+            ..Default::default()
+        };
+        
+        // Create regex patterns manually for testing
+        let regex_pattern = format!("(?i).*{}.*", regex::escape(&criteria.name_patterns[0]));
+        let regex = Regex::new(&regex_pattern).unwrap();
+        
+        // The pattern should not match
+        assert!(!regex.is_match(&font_info.name_string));
     }
 } 

@@ -4,7 +4,7 @@
 
 use crate::{Result, FontgrepError};
 use memmap2::Mmap;
-use skrifa::{FontRef, Tag};
+use skrifa::FontRef;
 use skrifa::prelude::*;
 use skrifa::raw::TableProvider;
 use std::{
@@ -12,6 +12,8 @@ use std::{
     fs::File,
     path::Path,
 };
+use log;
+use once_cell::sync::OnceCell;
 
 /// Font information extracted from a font file
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -34,8 +36,17 @@ pub struct FontInfo {
     /// Font tables
     pub tables: Vec<String>,
     
-    /// Charset string
-    pub charset_string: String,
+    /// Charset as a BTreeSet of codepoints
+    #[serde(skip)]
+    charset: OnceCell<BTreeSet<u32>>,
+    
+    /// Charset string (lazily computed)
+    #[serde(skip)]
+    charset_string_cell: OnceCell<String>,
+    
+    /// Serializable charset string for persistence
+    #[serde(rename = "charset_string")]
+    charset_string_serialized: String,
 }
 
 impl FontInfo {
@@ -47,36 +58,78 @@ impl FontInfo {
     
     /// Extract font information from a font reference
     pub fn from_font(font: &FontRef) -> Result<Self> {
-        // Extract name string with error handling
+        // Helper function to safely extract data with error handling
+        fn extract_safely<T, F>(font_name: &str, extraction_fn: F) -> T
+        where
+            F: FnOnce() -> T + std::panic::UnwindSafe,
+            T: Default,
+        {
+            match std::panic::catch_unwind(extraction_fn) {
+                Ok(result) => result,
+                Err(_) => {
+                    log::warn!("Failed to extract data from font: {}", font_name);
+                    T::default()
+                }
+            }
+        }
+        
+        // Extract name string first since we need it for error messages
         let name_string = extract_name_string(font);
+        log::debug!("Extracted font name: {}", name_string);
         
-        // Check if font is variable with error handling
+        // Extract all other properties with consistent error handling
         let is_variable = has_variations(font);
+        log::debug!("Font is variable: {}", is_variable);
         
-        // Extract variation axes with error handling
-        let axes = extract_axes(font);
+        let axes = extract_safely(&name_string, || extract_axes(font));
+        log::debug!("Extracted {} variation axes", axes.len());
         
-        // Extract OpenType features with error handling
-        let features = extract_features(font);
+        let features = extract_safely(&name_string, || extract_features(font));
+        log::debug!("Extracted {} OpenType features", features.len());
         
-        // Extract OpenType scripts with error handling
-        let scripts = extract_scripts(font);
+        let scripts = extract_safely(&name_string, || extract_scripts(font));
+        log::debug!("Extracted {} OpenType scripts", scripts.len());
         
-        // Extract font tables with error handling
-        let tables = extract_tables(font);
+        let tables = extract_safely(&name_string, || extract_tables(font));
+        log::debug!("Extracted {} font tables", tables.len());
         
-        // Create charset with optimized implementation
-        let charset = create_charset(font);
-        let charset_string = charset_to_string(&charset);
+        let charset = extract_safely(&name_string, || create_charset(font));
+        let charset_string_serialized = charset_to_string(&charset);
+        log::debug!("Extracted charset with {} codepoints", charset.len());
         
-        Ok(FontInfo {
+        // Create the FontInfo with lazy charset
+        let info = FontInfo {
             name_string,
             is_variable,
             axes,
             features,
             scripts,
             tables,
-            charset_string,
+            charset: OnceCell::new(),
+            charset_string_cell: OnceCell::new(),
+            charset_string_serialized,
+        };
+        
+        // Initialize the charset
+        let _ = info.charset.set(charset);
+        
+        Ok(info)
+    }
+    
+    /// Get the charset string (lazily computed)
+    pub fn charset_string(&self) -> &str {
+        self.charset_string_cell.get_or_init(|| {
+            // If we have a serialized charset string from deserialization, use that
+            if !self.charset_string_serialized.is_empty() {
+                return self.charset_string_serialized.clone();
+            }
+            
+            // Otherwise, compute it from the charset
+            if let Some(charset) = self.charset.get() {
+                charset_to_string(charset)
+            } else {
+                String::new()
+            }
         })
     }
     
@@ -93,12 +146,17 @@ impl FontInfo {
 
 /// Load a font from a file with optimized memory mapping
 pub fn load_font(path: &Path) -> Result<FontRef<'static>> {
-    let file = File::open(path)?;
+    let path_str = path.to_string_lossy().to_string();
+    let file = File::open(path)
+        .map_err(|e| FontgrepError::Io(format!("Failed to open font file {}: {}", path_str, e)))?;
+    
     let data = Box::leak(Box::new(unsafe { 
-        Mmap::map(&file).map_err(|e| FontgrepError::Io(e.to_string()))?
+        Mmap::map(&file)
+            .map_err(|e| FontgrepError::Io(format!("Failed to memory-map font file {}: {}", path_str, e)))?
     }));
+    
     FontRef::new(data)
-        .map_err(|e| FontgrepError::Font(e.to_string()))
+        .map_err(|e| FontgrepError::Font(format!("Failed to parse font data {}: {}", path_str, e)))
 }
 
 /// Check if a file is a font based on its extension
@@ -108,7 +166,8 @@ pub fn is_font_file(path: &Path) -> bool {
 
 /// Create a charset from a font with optimized implementation
 pub fn create_charset(font: &FontRef) -> BTreeSet<u32> {
-    let mut charset = BTreeSet::new();
+    // Use HashSet for faster insertion
+    let mut charset = HashSet::new();
     
     // Get the character map from the font
     let charmap = font.charmap();
@@ -116,6 +175,9 @@ pub fn create_charset(font: &FontRef) -> BTreeSet<u32> {
     // If the font has a character map, extract all supported codepoints
     if charmap.has_map() {
         // Use the mappings() method to get all codepoint to glyph mappings
+        // Reserve capacity for better performance
+        charset.reserve(charmap.mappings().count());
+        
         for (codepoint, _glyph_id) in charmap.mappings() {
             // Skip invalid Unicode codepoints
             if !is_invalid_unicode(codepoint) {
@@ -124,7 +186,9 @@ pub fn create_charset(font: &FontRef) -> BTreeSet<u32> {
         }
     }
     
-    charset
+    // Convert HashSet to BTreeSet for sorted order
+    // This is more efficient than inserting directly into a BTreeSet
+    charset.into_iter().collect()
 }
 
 /// Convert a charset to a string with optimized implementation
@@ -149,13 +213,32 @@ fn is_invalid_unicode(codepoint: u32) -> bool {
     // U+FFFE, U+FFFF (noncharacters)
     // U+1FFFE, U+1FFFF, U+2FFFE, U+2FFFF, ... U+10FFFE, U+10FFFF (noncharacters)
     
-    (codepoint <= 0x001F) ||
-    (codepoint == 0x007F) ||
-    (codepoint >= 0x0080 && codepoint <= 0x009F) ||
-    (codepoint >= 0xD800 && codepoint <= 0xDFFF) ||
-    (codepoint >= 0xFDD0 && codepoint <= 0xFDEF) ||
-    (codepoint == 0xFFFE || codepoint == 0xFFFF) ||
-    (codepoint & 0xFFFE) == 0xFFFE && codepoint <= 0x10FFFF
+    // Fast path for common case: ASCII printable characters
+    if (0x20..=0x7E).contains(&codepoint) {
+        return false;
+    }
+    
+    // Check for control characters (C0 and C1 controls, and DELETE)
+    if codepoint <= 0x1F || codepoint == 0x7F || (0x80..=0x9F).contains(&codepoint) {
+        return true;
+    }
+    
+    // Check for surrogate pairs
+    if (0xD800..=0xDFFF).contains(&codepoint) {
+        return true;
+    }
+    
+    // Check for noncharacters
+    if (0xFDD0..=0xFDEF).contains(&codepoint) {
+        return true;
+    }
+    
+    // Check for noncharacters at the end of each plane
+    if (codepoint & 0xFFFE) == 0xFFFE && codepoint <= 0x10FFFF {
+        return true;
+    }
+    
+    false
 }
 
 /// Extract the name string from a font with improved name record handling
@@ -239,137 +322,6 @@ fn extract_tables(font: &FontRef) -> Vec<String> {
     font.table_directory.table_records().iter()
         .map(|record| record.tag().to_string())
         .collect()
-}
-
-/// Trait for matching fonts
-pub trait FontMatcher {
-    /// Check if a font matches the criteria
-    fn matches(&self, info: &FontInfo) -> bool;
-}
-
-/// Matcher for variation axes
-pub struct AxesMatcher {
-    axes: Vec<String>,
-}
-
-impl AxesMatcher {
-    /// Create a new axes matcher
-    pub fn new(axes: &[String]) -> Self {
-        Self { axes: axes.to_vec() }
-    }
-}
-
-impl FontMatcher for AxesMatcher {
-    fn matches(&self, info: &FontInfo) -> bool {
-        self.axes.iter().all(|axis| info.axes.contains(axis))
-    }
-}
-
-/// Matcher for OpenType features
-pub struct FeaturesMatcher {
-    features: Vec<String>,
-}
-
-impl FeaturesMatcher {
-    /// Create a new features matcher
-    pub fn new(features: &[String]) -> Self {
-        Self { features: features.to_vec() }
-    }
-}
-
-impl FontMatcher for FeaturesMatcher {
-    fn matches(&self, info: &FontInfo) -> bool {
-        self.features.iter().all(|feature| info.features.contains(feature))
-    }
-}
-
-/// Matcher for OpenType scripts
-pub struct ScriptsMatcher {
-    scripts: Vec<String>,
-}
-
-impl ScriptsMatcher {
-    /// Create a new scripts matcher
-    pub fn new(scripts: &[String]) -> Self {
-        Self { scripts: scripts.to_vec() }
-    }
-}
-
-impl FontMatcher for ScriptsMatcher {
-    fn matches(&self, info: &FontInfo) -> bool {
-        self.scripts.iter().all(|script| info.scripts.contains(script))
-    }
-}
-
-/// Matcher for font tables
-pub struct TablesMatcher {
-    tables: Vec<Tag>,
-}
-
-impl TablesMatcher {
-    /// Create a new tables matcher
-    pub fn new(tables: &[Tag]) -> Self {
-        Self { tables: tables.to_vec() }
-    }
-}
-
-impl FontMatcher for TablesMatcher {
-    fn matches(&self, info: &FontInfo) -> bool {
-        self.tables.iter().all(|table| info.tables.contains(&table.to_string()))
-    }
-}
-
-/// Matcher for variable fonts
-pub struct VariableFontMatcher;
-
-impl VariableFontMatcher {
-    /// Create a new variable font matcher
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl FontMatcher for VariableFontMatcher {
-    fn matches(&self, info: &FontInfo) -> bool {
-        info.is_variable
-    }
-}
-
-/// Matcher for Unicode codepoints
-pub struct CodepointsMatcher {
-    codepoints: Vec<char>,
-}
-
-impl CodepointsMatcher {
-    /// Create a new codepoints matcher
-    pub fn new(codepoints: &[char]) -> Self {
-        Self { codepoints: codepoints.to_vec() }
-    }
-}
-
-impl FontMatcher for CodepointsMatcher {
-    fn matches(&self, info: &FontInfo) -> bool {
-        let charset: HashSet<char> = info.charset_string.chars().collect();
-        self.codepoints.iter().all(|cp| charset.contains(cp))
-    }
-}
-
-/// Matcher for font names
-pub struct NameMatcher {
-    patterns: Vec<regex::Regex>,
-}
-
-impl NameMatcher {
-    /// Create a new name matcher
-    pub fn new(patterns: &[regex::Regex]) -> Self {
-        Self { patterns: patterns.to_vec() }
-    }
-}
-
-impl FontMatcher for NameMatcher {
-    fn matches(&self, info: &FontInfo) -> bool {
-        self.patterns.iter().any(|pattern| pattern.is_match(&info.name_string))
-    }
 }
 
 #[cfg(test)]

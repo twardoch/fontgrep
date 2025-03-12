@@ -5,7 +5,7 @@
 use clap::Parser;
 use env_logger::{Builder, Env};
 use fontgrep::{cli, Result, with_context};
-use log::{error, info};
+use log::error;
 use std::process;
 
 /// Main entry point for the fontgrep application
@@ -32,9 +32,6 @@ fn run() -> Result<()> {
     if cli.verbose {
         log::set_max_level(log::LevelFilter::Debug);
     }
-    
-    // Log startup information
-    info!("fontgrep v{}", env!("CARGO_PKG_VERSION"));
     
     // Execute the command
     with_context(cli::execute(cli), || "Failed to execute command".to_string())

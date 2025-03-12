@@ -74,7 +74,7 @@ pub enum Commands {
     Saved,
     
     /// Remove missing fonts from the cache
-    Forget,
+    Clean,
 }
 
 /// Arguments for the search command
@@ -240,7 +240,7 @@ pub struct InfoArgs {
 pub fn execute(cli: Cli) -> Result<()> {
     // Determine cache path and whether to use cache
     let use_cache = match &cli.command {
-        Commands::Fast(_) | Commands::Save(_) | Commands::Saved | Commands::Forget => true,
+        Commands::Fast(_) | Commands::Save(_) | Commands::Saved | Commands::Clean => true,
         _ => false,
     };
     
@@ -288,8 +288,6 @@ pub fn execute(cli: Cli) -> Result<()> {
             
             // Update cache
             query.update_cache(&args.paths, args.force)?;
-            
-            println!("Fonts saved to cache successfully");
         }
         Commands::Font(args) => {
             // Load font
@@ -321,7 +319,7 @@ pub fn execute(cli: Cli) -> Result<()> {
             // Output results
             output_results(&results, cli.json)?;
         }
-        Commands::Forget => {
+        Commands::Clean => {
             // Create an empty query
             let query = FontQuery::new(
                 QueryCriteria::new(
@@ -366,39 +364,38 @@ pub fn parse_table_tags(input: &[String]) -> Result<Vec<Tag>> {
     Ok(result)
 }
 
-/// Convert CLI arguments to a query criteria
+/// Convert search arguments to query criteria
 pub fn args_to_query_criteria(args: &SearchArgs) -> Result<QueryCriteria> {
-    // Parse codepoints
-    let mut codepoints = Vec::new();
-    if !args.codepoints.is_empty() {
-        codepoints = parse_codepoints(&args.codepoints)?;
-    }
+    // Parse codepoints from both codepoints and text arguments
+    let mut codepoints = if args.codepoints.is_empty() {
+        Vec::new()
+    } else {
+        parse_codepoints(&args.codepoints)?
+    };
     
-    // Parse text
+    // Add characters from text if provided
     if let Some(text) = &args.text {
         codepoints.extend(text.chars());
     }
     
     // Parse table tags and convert to strings
-    let tables_tags = parse_table_tags(&args.tables)?;
-    let tables: Vec<String> = tables_tags.iter()
-        .map(|tag| tag.to_string())
-        .collect();
+    let tables = if args.tables.is_empty() {
+        Vec::new()
+    } else {
+        parse_table_tags(&args.tables)?
+            .iter()
+            .map(|tag| tag.to_string())
+            .collect()
+    };
     
-    // Compile name regexes
-    let mut name_patterns = Vec::new();
-    for pattern in &args.name {
-        // Store the pattern string instead of the compiled regex
-        name_patterns.push(pattern.clone());
-    }
-    
+    // Create query criteria directly
     Ok(QueryCriteria::new(
         args.axes.clone(),
         codepoints,
         args.features.clone(),
         args.scripts.clone(),
         tables,
-        name_patterns,
+        args.name.clone(), // Name patterns are used directly
         args.variable,
     ))
 }
@@ -476,13 +473,14 @@ fn output_font_info(info: &FontInfo, detailed: bool, json_output: bool) -> Resul
     } else {
         println!("Name: {}", info.name_string);
         println!("Variable: {}", info.is_variable);
+        println!("Axes: {}", info.axes.join(", "));
+        println!("Features: {}", info.features.join(", "));
+        println!("Scripts: {}", info.scripts.join(", "));
+        println!("Tables: {}", info.tables.join(", "));
+        println!("Charset: {}", info.charset_string());
         
         if detailed {
-            println!("Axes: {}", info.axes.join(", "));
-            println!("Features: {}", info.features.join(", "));
-            println!("Scripts: {}", info.scripts.join(", "));
-            println!("Tables: {}", info.tables.join(", "));
-            println!("Charset: {}", info.charset_string);
+            // Additional detailed information can be added here
         }
     }
     
