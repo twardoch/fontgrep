@@ -117,9 +117,7 @@ pub fn create_charset(font: &FontRef) -> BTreeSet<u32> {
         // Use the mappings() method to get all codepoint to glyph mappings
         for (codepoint, _glyph_id) in charmap.mappings() {
             // Skip invalid Unicode codepoints
-            if !is_invalid_unicode(codepoint) {
-                charset.insert(codepoint);
-            }
+            charset.insert(codepoint);
         }
     }
 
@@ -135,26 +133,6 @@ pub fn charset_to_string(charset: &BTreeSet<u32>) -> String {
         }
     }
     result
-}
-
-/// Check if a Unicode codepoint is invalid or problematic
-fn is_invalid_unicode(codepoint: u32) -> bool {
-    // U+0000 (NULL)
-    // U+0001-U+001F (C0 controls)
-    // U+007F (DELETE)
-    // U+0080-U+009F (C1 controls)
-    // U+D800-U+DFFF (surrogate pairs)
-    // U+FDD0-U+FDEF (noncharacters)
-    // U+FFFE, U+FFFF (noncharacters)
-    // U+1FFFE, U+1FFFF, U+2FFFE, U+2FFFF, ... U+10FFFE, U+10FFFF (noncharacters)
-
-    (codepoint <= 0x001F)
-        || (codepoint == 0x007F)
-        || (codepoint >= 0x0080 && codepoint <= 0x009F)
-        || (codepoint >= 0xD800 && codepoint <= 0xDFFF)
-        || (codepoint >= 0xFDD0 && codepoint <= 0xFDEF)
-        || (codepoint == 0xFFFE || codepoint == 0xFFFF)
-        || (codepoint & 0xFFFE) == 0xFFFE && codepoint <= 0x10FFFF
 }
 
 /// Extract the name string from a font with improved name record handling
@@ -399,32 +377,6 @@ impl FontMatcher for NameMatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_is_invalid_unicode() {
-        // Control characters
-        assert!(is_invalid_unicode(0x0000));
-        assert!(is_invalid_unicode(0x001F));
-        assert!(is_invalid_unicode(0x007F));
-        assert!(is_invalid_unicode(0x0080));
-        assert!(is_invalid_unicode(0x009F));
-
-        // Surrogate pairs
-        assert!(is_invalid_unicode(0xD800));
-        assert!(is_invalid_unicode(0xDFFF));
-
-        // Noncharacters
-        assert!(is_invalid_unicode(0xFDD0));
-        assert!(is_invalid_unicode(0xFDEF));
-        assert!(is_invalid_unicode(0xFFFE));
-        assert!(is_invalid_unicode(0xFFFF));
-        assert!(is_invalid_unicode(0x1FFFE));
-        assert!(is_invalid_unicode(0x10FFFE));
-
-        // Valid codepoints
-        assert!(!is_invalid_unicode(0x0041)); // 'A'
-        assert!(!is_invalid_unicode(0x1F600)); // 😀
-    }
 
     #[test]
     fn test_is_font_file() {
