@@ -2,8 +2,8 @@
 //
 // Command-line interface for fontgrep
 
-use crate::{font::FontInfo, query::FontQuery, FontgrepError, Result};
-use clap::{Args as ClapArgs, Parser, Subcommand};
+use crate::{query::FontQuery, FontgrepError, Result};
+use clap::{Args as ClapArgs, Parser};
 use regex::Regex;
 use skrifa::Tag;
 use std::path::PathBuf;
@@ -17,8 +17,8 @@ use std::path::PathBuf;
 )]
 pub struct Cli {
     /// Subcommand to execute
-    #[command(subcommand)]
-    command: Commands,
+    #[clap(flatten)]
+    search_args: SearchArgs,
 
     /// Enable verbose output
     #[arg(
@@ -39,16 +39,6 @@ pub struct Cli {
                     If not specified, results are output as human-readable text."
     )]
     pub json: bool,
-}
-
-/// Subcommands for fontgrep
-#[derive(Subcommand, Debug)]
-enum Commands {
-    /// Find fonts based on various criteria (without cache)
-    Find(SearchArgs),
-
-    /// Show information about a font
-    Font(InfoArgs),
 }
 
 /// Arguments for the search command
@@ -196,23 +186,11 @@ struct InfoArgs {
 
 /// Execute the command
 pub fn execute(cli: Cli) -> Result<()> {
-    match &cli.command {
-        Commands::Find(args) => {
-            let query = FontQuery::from(args);
-            let results = query.execute()?;
+    let query = FontQuery::from(&cli.search_args);
+    let results = query.execute()?;
 
-            // Output results
-            output_results(&results, cli.json)?;
-        }
-        Commands::Font(args) => {
-            // Load font
-            let font_info = FontInfo::load(&args.path)?;
-
-            // Output font info
-            output_font_info(&font_info, args.detailed, cli.json)?;
-        }
-    }
-
+    // Output results
+    output_results(&results, cli.json)?;
     Ok(())
 }
 
@@ -287,28 +265,28 @@ fn output_results(results: &[String], json_output: bool) -> Result<()> {
     Ok(())
 }
 
-/// Output font info
-fn output_font_info(info: &FontInfo, detailed: bool, json_output: bool) -> Result<()> {
-    // We'll come back to this soon.
+// /// Output font info
+// fn output_font_info(info: &FontInfo, detailed: bool, json_output: bool) -> Result<()> {
+// We'll come back to this soon.
 
-    // if json_output {
-    //     let json = serde_json::to_string_pretty(info)?;
-    //     println!("{}", json);
-    // } else {
-    //     println!("Name: {}", info.name_string);
-    //     println!("Variable: {}", info.is_variable);
+// if json_output {
+//     let json = serde_json::to_string_pretty(info)?;
+//     println!("{}", json);
+// } else {
+//     println!("Name: {}", info.name_string);
+//     println!("Variable: {}", info.is_variable);
 
-    //     if detailed {
-    //         println!("Axes: {}", info.axes.join(", "));
-    //         println!("Features: {}", info.features.join(", "));
-    //         println!("Scripts: {}", info.scripts.join(", "));
-    //         println!("Tables: {}", info.tables.join(", "));
-    //         println!("Charset: {}", info.charset_string);
-    //     }
-    // }
+//     if detailed {
+//         println!("Axes: {}", info.axes.join(", "));
+//         println!("Features: {}", info.features.join(", "));
+//         println!("Scripts: {}", info.scripts.join(", "));
+//         println!("Tables: {}", info.tables.join(", "));
+//         println!("Charset: {}", info.charset_string);
+//     }
+// }
 
-    Ok(())
-}
+// Ok(())
+// }
 
 #[cfg(test)]
 mod tests {
