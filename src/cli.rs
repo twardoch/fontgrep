@@ -22,7 +22,6 @@ pub struct Cli {
 
     /// Enable verbose output
     #[arg(
-        short,
         long,
         help = "Enable verbose output",
         long_help = "Enable verbose output mode that shows additional information \
@@ -32,7 +31,7 @@ pub struct Cli {
 
     /// Output as JSON
     #[arg(
-        short,
+        short = 'j',
         long,
         help = "Output as JSON",
         long_help = "Output results in JSON format for machine processing. \
@@ -119,7 +118,7 @@ pub(crate) struct SearchArgs {
 
     /// Only show variable fonts
     #[arg(
-        short,
+        short = 'v',
         long,
         help = "Only show variable fonts",
         long_help = "Only show variable fonts that support OpenType Font Variations."
@@ -162,7 +161,7 @@ pub(crate) struct SearchArgs {
 
     /// Number of parallel jobs to use
     #[arg(
-        short,
+        short = 'J',
         long,
         default_value_t = num_cpus::get(),
         help = "Number of parallel jobs to use",
@@ -187,10 +186,13 @@ struct InfoArgs {
 /// Execute the command
 pub fn execute(cli: Cli) -> Result<()> {
     let query = FontQuery::from(&cli.search_args);
-    let results = query.execute()?;
+    let results = query.execute(cli.json)?;
 
-    // Output results
-    output_results(&results, cli.json)?;
+    // Output results only for JSON mode
+    // (normal output is already printed during execution)
+    if cli.json {
+        output_results(&results, cli.json)?;
+    }
     Ok(())
 }
 

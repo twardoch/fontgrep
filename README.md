@@ -11,10 +11,9 @@ A command-line tool for searching and analyzing font files based on various crit
   - Font tables (e.g., GPOS, GSUB)
   - Unicode character support
   - Font name patterns
-- Fast searching with SQLite-based caching
+- Progressive output for immediate feedback
 - Parallel processing for improved performance
 - Output in text or JSON format
-- Detailed font information display
 
 ## Installation
 
@@ -27,90 +26,72 @@ cargo install fontgrep
 ### Basic Font Searching
 
 ```bash
-# Find variable fonts (without cache)
-fontgrep find --variable /path/to/fonts
+# Find variable fonts
+fontgrep --variable /path/to/fonts
 
-# Find fonts with specific features (without cache)
-fontgrep find -f smcp,onum /path/to/fonts
+# Find fonts with specific features
+fontgrep -f smcp,onum /path/to/fonts
 
-# Find fonts supporting specific scripts (without cache)
-fontgrep find -s latn,cyrl /path/to/fonts
+# Find fonts supporting specific scripts
+fontgrep -s latn,cyrl /path/to/fonts
 
-# Find fonts by name pattern (without cache)
-fontgrep find -n "Roboto.*Mono" /path/to/fonts
+# Find fonts by name pattern
+fontgrep -n "Roboto.*Mono" /path/to/fonts
 
-# Find fonts supporting specific Unicode ranges (without cache)
-fontgrep find -u "U+0041-U+005A,U+0061-U+007A" /path/to/fonts
+# Find fonts supporting specific Unicode ranges
+fontgrep -u "U+0041-U+005A,U+0061-U+007A" /path/to/fonts
 
-# Find fonts with specific tables (without cache)
-fontgrep find -T GPOS,GSUB /path/to/fonts
+# Find fonts with specific tables
+fontgrep -T GPOS,GSUB /path/to/fonts
+
+# Find fonts supporting specific text
+fontgrep -t "Hello World" /path/to/fonts
 ```
 
-### Fast Searching with Cache
+### Combining Search Criteria
 
 ```bash
-# Fast search for variable fonts (with cache)
-fontgrep fast --variable /path/to/fonts
+# Find variable fonts with small caps feature
+fontgrep --variable -f smcp /path/to/fonts
 
-# Fast search for fonts with specific features (with cache)
-fontgrep fast -f smcp,onum /path/to/fonts
-```
+# Find fonts supporting both Latin and Cyrillic scripts
+fontgrep -s latn,cyrl /path/to/fonts
 
-### Cache Management
-
-```bash
-# Save fonts to the cache
-fontgrep save /path/to/fonts
-
-# Force update the cache even if fonts haven't changed
-fontgrep save --force /path/to/fonts
-
-# List all saved fonts in the cache
-fontgrep saved
-
-# Remove missing fonts from the cache
-fontgrep forget
-```
-
-### Font Information
-
-```bash
-# Show information about a font
-fontgrep font /path/to/font.ttf
-
-# Show detailed information about a font
-fontgrep font -d /path/to/font.ttf
+# Find fonts with specific name pattern and features
+fontgrep -n "Roboto" -f liga,kern /path/to/fonts
 ```
 
 ### Output Formats
 
 ```bash
 # Output in JSON format
-fontgrep find -j /path/to/fonts
+fontgrep -j /path/to/fonts
 
-# Output in JSON format (alternative)
-fontgrep --json find /path/to/fonts
+# Combine JSON output with search criteria
+fontgrep -j -f smcp,onum /path/to/fonts
 ```
 
-## Configuration
+## Command-Line Options
 
-- **Cache Commands**: Use `fast` for cached searches and `find` for direct searches without cache.
-- **Cache Location**: Use `--cache-path` to specify a custom cache location (defaults to user's data directory).
-- **Parallel Jobs**: Use `-j/--jobs` to control the number of parallel jobs (defaults to CPU core count).
-- **Verbose Output**: Use `-v/--verbose` for detailed logging.
+- `-a, --axes <AXES>`: Comma-separated list of OpenType variation axes to search for (e.g., wght,wdth)
+- `-f, --features <FEATURES>`: Comma-separated list of OpenType features to search for (e.g., smcp,onum)
+- `-s, --scripts <SCRIPTS>`: Comma-separated list of OpenType script tags to search for (e.g., latn,cyrl)
+- `-T, --tables <TABLES>`: Comma-separated list of OpenType table tags to search for (e.g., GPOS,GSUB)
+- `-v, --variable`: Only show variable fonts that support OpenType Font Variations
+- `-n, --name <NAME>`: Regular expressions to match against font names
+- `-u, --codepoints <CODEPOINTS>`: Unicode codepoints or ranges to search for (e.g., U+0041-U+005A,U+0061)
+- `-t, --text <TEXT>`: Text string to check for support
+- `-J, --jobs <JOBS>`: Number of parallel jobs to use (defaults to CPU core count)
+- `--verbose`: Enable verbose output
+- `-j, --json`: Output results in JSON format
+- `-h, --help`: Print help information
+- `-V, --version`: Print version information
 
 ## Performance
 
 - Uses memory mapping for efficient font file access
-- Maintains a SQLite cache with optimized indices
 - Employs parallel processing for searching and font analysis
-- Uses WAL mode for improved database concurrency
-
-## Error Handling
-
-- Graceful error recovery with detailed error messages
-- Proper cleanup of resources
-- Comprehensive logging for debugging
+- Provides progressive output for immediate feedback
 
 ## Development
 
@@ -139,5 +120,5 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Acknowledgments
 
 - Uses [skrifa](https://github.com/googlefonts/skrifa) for font parsing
-- Uses [rusqlite](https://github.com/rusqlite/rusqlite) for SQLite database access
-- Uses [clap](https://github.com/clap-rs/clap) for command-line argument parsing 
+- Uses [clap](https://github.com/clap-rs/clap) for command-line argument parsing
+- Uses [jwalk](https://github.com/jessegrosjean/jwalk) for parallel directory traversal 
