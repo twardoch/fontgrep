@@ -17,25 +17,25 @@ use std::{
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FontInfo {
     /// Font name string
-    pub name_string: String,
+    pub(crate) name_string: String,
 
     /// Whether the font is variable
-    pub is_variable: bool,
+    pub(crate) is_variable: bool,
 
     /// Variation axes
-    pub axes: Vec<String>,
+    pub(crate) axes: Vec<String>,
 
     /// OpenType features
-    pub features: Vec<String>,
+    pub(crate) features: Vec<String>,
 
     /// OpenType scripts
-    pub scripts: Vec<String>,
+    pub(crate) scripts: Vec<String>,
 
     /// Font tables
-    pub tables: Vec<String>,
+    pub(crate) tables: Vec<String>,
 
     /// Charset string
-    pub charset_string: String,
+    pub(crate) charset_string: String,
 }
 
 impl FontInfo {
@@ -46,7 +46,7 @@ impl FontInfo {
     }
 
     /// Extract font information from a font reference
-    pub fn from_font(font: &FontRef) -> Result<Self> {
+    fn from_font(font: &FontRef) -> Result<Self> {
         // Extract name string with error handling
         let name_string = extract_name_string(font);
 
@@ -82,7 +82,7 @@ impl FontInfo {
 }
 
 /// Load a font from a file with optimized memory mapping
-pub fn load_font(path: &Path) -> Result<FontRef<'static>> {
+fn load_font(path: &Path) -> Result<FontRef<'static>> {
     let file = File::open(path)?;
     let data = Box::leak(Box::new(unsafe {
         Mmap::map(&file).map_err(|e| FontgrepError::Io(e.to_string()))?
@@ -91,7 +91,7 @@ pub fn load_font(path: &Path) -> Result<FontRef<'static>> {
 }
 
 /// Check if a file is a font based on its extension
-pub fn is_font_file(path: &Path) -> bool {
+pub(crate) fn is_font_file(path: &Path) -> bool {
     if let Some(ext) = path.extension() {
         let ext_str = ext.to_string_lossy().to_lowercase();
         matches!(ext_str.as_str(), "ttf" | "otf" | "ttc" | "otc")
@@ -100,7 +100,7 @@ pub fn is_font_file(path: &Path) -> bool {
     }
 }
 /// Create a charset from a font with optimized implementation
-pub fn create_charset(font: &FontRef) -> BTreeSet<u32> {
+fn create_charset(font: &FontRef) -> BTreeSet<u32> {
     let mut charset = BTreeSet::new();
 
     // Get the character map from the font
@@ -119,7 +119,7 @@ pub fn create_charset(font: &FontRef) -> BTreeSet<u32> {
 }
 
 /// Convert a charset to a string with optimized implementation
-pub fn charset_to_string(charset: &BTreeSet<u32>) -> String {
+fn charset_to_string(charset: &BTreeSet<u32>) -> String {
     let mut result = String::with_capacity(charset.len());
     for &cp in charset {
         if let Some(c) = char::from_u32(cp) {

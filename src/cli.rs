@@ -21,7 +21,7 @@ use std::path::PathBuf;
 pub struct Cli {
     /// Subcommand to execute
     #[command(subcommand)]
-    pub command: Commands,
+    command: Commands,
 
     /// Enable verbose output
     #[arg(
@@ -46,7 +46,7 @@ pub struct Cli {
 
 /// Subcommands for fontgrep
 #[derive(Subcommand, Debug)]
-pub enum Commands {
+enum Commands {
     /// Find fonts based on various criteria (without cache)
     Find(SearchArgs),
 
@@ -56,7 +56,7 @@ pub enum Commands {
 
 /// Arguments for the search command
 #[derive(ClapArgs, Debug)]
-pub struct SearchArgs {
+pub(crate) struct SearchArgs {
     /// Directories or font files to search
     #[arg(
         required = true,
@@ -185,25 +185,9 @@ pub struct SearchArgs {
     pub jobs: usize,
 }
 
-/// Arguments for the update command
-#[derive(ClapArgs, Debug)]
-pub struct UpdateArgs {
-    /// Directories or font files to update in the cache
-    #[arg(required = true)]
-    pub paths: Vec<PathBuf>,
-
-    /// Force update even if the font hasn't changed
-    #[arg(short, long)]
-    pub force: bool,
-
-    /// Number of parallel jobs to use
-    #[arg(short, long, default_value_t = num_cpus::get())]
-    pub jobs: usize,
-}
-
 /// Arguments for the info command
 #[derive(ClapArgs, Debug)]
-pub struct InfoArgs {
+struct InfoArgs {
     /// Font file to show information about
     #[arg(required = true)]
     pub path: PathBuf,

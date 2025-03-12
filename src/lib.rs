@@ -1,11 +1,5 @@
-// this_file: fontgrep/src/lib.rs
-//
 // Main library entry point for fontgrep
-
 use thiserror::Error;
-
-/// Default batch size for database operations
-pub const DEFAULT_BATCH_SIZE: usize = 100;
 
 /// Error type for fontgrep
 #[derive(Error, Debug)]
