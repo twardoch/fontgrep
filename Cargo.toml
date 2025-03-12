@@ -1,13 +1,48 @@
 [package]
 name = "fontgrep"
-version = "0.1.0"
-edition = "2024"
+version = "0.2.0"
+edition = "2021"
+authors = ["Adam Twardoch <adam@twardoch.com>"]
+description = "A tool to search for fonts based on various criteria"
+license = "MIT"
+repository = "https://github.com/twardoch/fontgrep"
+readme = "README.md"
+keywords = ["font", "search", "opentype", "typography"]
+categories = ["command-line-utilities", "text-processing"]
+
+[lib]
+name = "fontgrep"
+path = "src/lib.rs"
+
+[[bin]]
+name = "fontgrep"
+path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.5.31", features = ["derive"] }
-jwalk = "0.8.1"
-memmap2 = "0.9.5"
-rayon = "1.10.0"
-read-fonts = "0.27.2"
-regex = "1.11.1"
+# Core dependencies
 skrifa = "0.28.1"
+clap = { version = "4.4.6", features = ["derive"] }
+regex = "1.9.5"
+rusqlite = { version = "0.29.0", features = ["bundled"] }
+r2d2 = "0.8.10"
+r2d2_sqlite = "0.22.0"
+rayon = "1.8.0"
+walkdir = "2.4.0"
+thiserror = "1.0.48"
+serde = { version = "1.0.188", features = ["derive"] }
+serde_json = "1.0.107"
+dirs = "5.0.1"
+num_cpus = "1.16.0"
+memmap2 = "0.5.10"
+env_logger = "0.11.2"
+log = "0.4.20"
+
+[dev-dependencies]
+tempfile = "3.8.0"
+criterion = "0.5.1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+strip = true
