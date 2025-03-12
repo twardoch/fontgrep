@@ -38,9 +38,6 @@ pub struct QueryCriteria {
 
     /// Only show variable fonts
     pub variable: bool,
-
-    /// Charset string for searching
-    pub charset: String,
 }
 
 impl QueryCriteria {
@@ -54,13 +51,6 @@ impl QueryCriteria {
         name_patterns: Vec<String>,
         variable: bool,
     ) -> Self {
-        // Convert codepoints to charset string
-        let charset = if !codepoints.is_empty() {
-            codepoints.iter().collect()
-        } else {
-            String::new()
-        };
-
         Self {
             axes,
             codepoints,
@@ -69,7 +59,6 @@ impl QueryCriteria {
             tables,
             name_patterns,
             variable,
-            charset,
         }
     }
 
