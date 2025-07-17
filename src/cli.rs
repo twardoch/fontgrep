@@ -207,8 +207,7 @@ pub fn parse_codepoints(input: &str) -> Result<Vec<char>> {
             let parts: Vec<&str> = item.split('-').collect();
             if parts.len() != 2 {
                 return Err(FontgrepError::Parse(format!(
-                    "Invalid codepoint range: {}",
-                    item
+                    "Invalid codepoint range: {item}"
                 )));
             }
 
@@ -220,8 +219,7 @@ pub fn parse_codepoints(input: &str) -> Result<Vec<char>> {
 
             if start_u32 > end_u32 {
                 return Err(FontgrepError::Parse(format!(
-                    "Invalid codepoint range: {} > {}",
-                    start_u32, end_u32
+                    "Invalid codepoint range: {start_u32} > {end_u32}"
                 )));
             }
 
@@ -248,19 +246,19 @@ fn parse_codepoint(input: &str) -> Result<char> {
 
     let input = input.trim_start_matches("U+").trim_start_matches("u+");
     let cp = u32::from_str_radix(input, 16)
-        .map_err(|_| FontgrepError::Parse(format!("Invalid codepoint: {}", input)))?;
+        .map_err(|_| FontgrepError::Parse(format!("Invalid codepoint: {input}")))?;
 
-    char::from_u32(cp).ok_or_else(|| FontgrepError::Parse(format!("Invalid codepoint: {}", input)))
+    char::from_u32(cp).ok_or_else(|| FontgrepError::Parse(format!("Invalid codepoint: {input}")))
 }
 
 /// Output results
 fn output_results(results: &[String], json_output: bool) -> Result<()> {
     if json_output {
         let json = serde_json::to_string_pretty(results)?;
-        println!("{}", json);
+        println!("{json}");
     } else {
         for result in results {
-            println!("{}", result);
+            println!("{result}");
         }
     }
     Ok(())

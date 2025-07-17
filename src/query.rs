@@ -99,7 +99,7 @@ impl FontQuery {
                             // Font matches criteria
                             let path_str = path.to_string_lossy().to_string();
                             if !json_output {
-                                println!("{}", path_str);
+                                println!("{path_str}");
                             }
                             let mut fonts = matching_fonts.lock().unwrap();
                             fonts.push(path_str);
@@ -141,7 +141,7 @@ impl FontQuery {
                             // Font matches criteria
                             let path_str = entry.path().to_string_lossy().to_string();
                             if !json_output {
-                                println!("{}", path_str);
+                                println!("{path_str}");
                             }
                             let mut fonts = matching_fonts.lock().unwrap();
                             fonts.push(path_str);
