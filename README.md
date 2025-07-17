@@ -1,7 +1,6 @@
 # fontgrep
 
 [![CI](https://github.com/twardoch/fontgrep/workflows/CI/badge.svg)](https://github.com/twardoch/fontgrep/actions)
-[![Release](https://github.com/twardoch/fontgrep/workflows/Release/badge.svg)](https://github.com/twardoch/fontgrep/actions)
 [![Crates.io](https://img.shields.io/crates/v/fontgrep.svg)](https://crates.io/crates/fontgrep)
 [![Downloads](https://img.shields.io/crates/d/fontgrep.svg)](https://crates.io/crates/fontgrep)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -208,6 +207,10 @@ Contributions are welcome! Please follow these steps:
 ### Available Make Targets
 
 Run `make help` to see all available targets.
+
+### GitHub Actions Setup
+
+Due to permission requirements, GitHub Actions workflows need to be set up manually. See [WORKFLOWS.md](WORKFLOWS.md) for detailed instructions on setting up CI/CD pipelines for automated testing, building, and releasing.
 
 ## License
 
