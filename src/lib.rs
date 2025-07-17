@@ -40,6 +40,7 @@ pub mod cli;
 mod font;
 mod matchers;
 mod query;
+pub mod version;
 
 // Implement From for common error types
 impl From<std::io::Error> for FontgrepError {
